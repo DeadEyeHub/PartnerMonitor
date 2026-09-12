@@ -93,7 +93,7 @@ def collect(input_path, data_dir, selected=None, replay_run=None, ownership_dept
                         detail = None
                     else:
                         scanned,as_of,detail = import_xml(db,run_id,s,snapshot_ids[s['id']],data_dir/meta['path'])
-                        if detail:
+                        if detail and not detail.startswith('SOURCE_DATE_OLDER_THAN_7_DAYS'):
                             manifest['warnings'].append(s['id']+': '+detail)
                         counts = {}
                     if as_of:

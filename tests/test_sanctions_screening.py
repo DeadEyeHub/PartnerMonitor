@@ -75,6 +75,15 @@ class SanctionsTests(unittest.TestCase):
         self.assertEqual(row['status'],'INCOMPLETE')
         self.assertIn('fid_un',json.loads(row['limitations'])['missing_sources'])
 
+    def test_old_fid_date_is_informational(self):
+        self.seed_person()
+        self.db.execute("UPDATE sanction_names SET name='Unrelated Name'")
+        self.db.execute("UPDATE source_checks SET detail='SOURCE_DATE_OLDER_THAN_7_DAYS' WHERE source='fid_eu'")
+        self.db.execute("INSERT INTO registry (run_id,registration_number,snapshot_id,source_row,record_key,row_hash,raw_json,name) VALUES ('r',?,'s',1,'company','hash','{}','Local Company')",(REG,))
+        result=screen(self.db,'r')
+        self.assertEqual(result['source_date_warnings'],[])
+        self.assertEqual(self.db.execute('SELECT status FROM sanctions_screening').fetchone()[0],'NO_CANDIDATES')
+
     def test_source_dates_missing_old_future(self):
         self.assertEqual(date_warning(None),'SOURCE_DATE_MISSING')
         self.assertIn('OLDER',date_warning('2018-03-29T15:10:00Z'))
@@ -101,7 +110,7 @@ class SanctionsTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()),patch('partner_monitor.collection.download',side_effect=fetch):
             first=collect(input_path,data,['fid_un'])
         self.assertEqual(first['status'],'PARTIAL')
-        self.assertTrue(any('SOURCE_DATE_OLDER' in s for s in first['warnings']))
+        self.assertFalse(any('SOURCE_DATE_OLDER' in s for s in first['warnings']))
         with redirect_stdout(io.StringIO()),patch('partner_monitor.collection.download',side_effect=AssertionError('No network')):
             second=collect(input_path,data,['fid_un'],first['run_id'])
         self.assertEqual(second['status'],'PARTIAL')

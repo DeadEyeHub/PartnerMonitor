@@ -123,9 +123,9 @@ beneficial owners or financial statements do not imply high risk. LOADED for san
 means a list was imported; screening outcomes are stored separately in `sanctions_screening` and `sanctions_candidates`.
 
 Retrieval time, HTTP Last-Modified, and dates within sources are stored separately.
-FID XML dates older than seven days, missing dates and future dates produce explicit
-warnings and make the run PARTIAL. Age is an operational review threshold, not proof
-that a newer list exists. A recent successful download does not reset the XML date.
+FID is the agreed source for EU, UN and Latvian lists at this stage. XML dates older
+than seven days are informational and do not make a run PARTIAL. Missing or future
+dates and failed/missing inputs still require attention. A fresh download does not reset the XML date.
 All three FID lists are downloaded through the website's POST form with a temporary
 CSRF token; tokens are not persisted. The previous collector already used POST;
 a diagnostic GET failure did not represent a collector failure.
@@ -149,7 +149,7 @@ These limitations must be considered when interpreting an absence of candidates.
 
 Company screening states:
 - CANDIDATES_REQUIRE_REVIEW: inspect candidates and the coverage limitations.
-- INCOMPLETE: no candidates, but a required source/company name is absent or dates require review.
+- INCOMPLETE: no candidates, but a required source/company name is absent or required date metadata is missing/invalid.
 - NO_CANDIDATES: no candidates under these rules and no tracked source/date gaps; not legal clearance.
 - Historical runs with no screening rows are shown as NOT_PERFORMED.
 
@@ -317,3 +317,20 @@ missing keys/configuration return exit code 1 before network requests.
 
 Offline automated tests use synthetic articles and mocked providers in temporary
 SQLite databases. They never add fictional findings to the production report.
+
+
+## Compact report export
+
+The report command writes both `latest.html` and `latest.csv`. CSV includes only root
+companies and exactly the eight Overview fields from task section 26: Company,
+Registration number, Reliability score, Risk class, Coverage, Main reason,
+New findings, Recommended action. UTF-8 BOM preserves Latvian text in Excel.
+Import registration numbers as text. Formula-leading text is escaped for CSV safety.
+
+Reliability score and New findings stay blank until scoring and finding-difference
+logic exist; Risk class is NOT_ASSESSED. Main reason lists selected recorded facts
+and pending work, not a comprehensive risk result. Coverage is a percentage of seven
+equally weighted areas: UR identity, VID rating, VAT lookup, financial data, tax debt,
+sanctions name screening and web analysis. No web result is a zero-risk conclusion.
+Source dates remain visible in the HTML; raw JSON fields are hidden from its tables.
+Old run history is retained. Replay creates a new run with the current FID date policy.

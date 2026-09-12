@@ -117,6 +117,10 @@ def compare(db,current,previous):
 
 def report(db,run_id,path):
     data = summary(db,run_id)
+    from .overview import overview_rows,screening_rows,export_csv
+    overview=overview_rows(db,run_id,data['companies'],company)
+    csv_path=path.with_suffix('.csv')
+    export_csv(overview,csv_path)
     evidence_links = {}
     data_dir = Path(db.execute('PRAGMA database_list').fetchone()[2]).parent
     for snapshot in db.execute("SELECT metadata_json FROM source_snapshots WHERE run_id=? AND source='vid_debt'",(run_id,)):
@@ -140,16 +144,23 @@ def report(db,run_id,path):
     def table(rows,exclude=()):
         if not rows:
             return '<p class="muted">No records. Check the source status.</p>'
-        columns = [c for c in rows[0] if c not in exclude]
+        columns = [c for c in rows[0] if c not in exclude and not c.endswith('_json') and c!='limitations']
         return '<div class="scroll"><table><thead><tr>'+''.join('<th title="'+esc(c)+'">'+esc(display_label(c))+'</th>' for c in columns)+'</tr></thead><tbody>'+''.join('<tr>'+''.join('<td>'+esc(row.get(c))+'</td>' for c in columns)+'</tr>' for row in rows)+'</tbody></table></div>'
     blocks = ['<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Partner Monitor — Data</title>',
       '<style>body{font:15px system-ui;margin:32px;background:#f5f7fa;color:#172435}h1,h2{color:#133b55}table{border-collapse:collapse;background:white;width:100%}td,th{padding:9px;border:1px solid #dce3ea;text-align:left;vertical-align:top}th{background:#e8eff6}details{margin:12px 0;padding:12px;background:white;border:1px solid #dce3ea}summary{cursor:pointer;font-weight:600}.scroll{overflow:auto}.muted{color:#596574}a{color:#075c9a}</style>',
-      '<h1>Partner Monitor — Official Data</h1>',
-      '<p>Run '+esc(run_id)+' · '+esc(data['run']['started_at'])+' · '+esc(data['run']['status'])+'</p>',
-      '<p>This report shows imported facts and, where available, sanctions name-screening candidates. Candidates require identity and legal review; no candidates does not mean no sanctions risk. LOADED means only that a list was imported. See Sanctions screening for coverage and date limitations. Historical runs without screening records were not screened. Official source text is preserved.</p>',
-      '<h2>Sources and Data Quality</h2>',table(data['sources']),
-      '<h2>Sanctions Screening</h2>',table(data['sanctions_screening']) if data['sanctions_screening'] else '<p>NOT_PERFORMED: this run has no screening results.</p>',
-      '<h2>Companies</h2>',table(data['companies'])]
+      '<h1>Partner Monitoring Report</h1>',
+      '<p>Official-data run '+esc(run_id)+' · '+esc(data['run']['started_at'])+' · '+esc(data['run']['status'])+'</p>',
+      '<p>Risk scores and risk classes have not yet been calculated. Blank scores and new-findings counts mean not assessed, not zero.</p>',
+      '<p><a href="'+esc(csv_path.name)+'">Download compact CSV</a></p>',
+      '<h2>Overview</h2>',table(overview),
+      '<p>Coverage is the percentage of seven equally weighted data areas available: UR identity, VID rating, VAT lookup, financial data, tax debt, sanctions name screening and web analysis. It measures available checks, not reliability. Main reasons are selected recorded facts, not a complete risk assessment.</p>',
+      '<h2>Sanctions Screening</h2>',
+      '<p>EU, UN and Latvian lists are supplied by FID, the agreed source for this stage. File publication dates are informational: an old date alone does not make screening incomplete. Download failures, missing inputs and invalid dates still require attention.</p>',
+      '<p>Names of companies, former company names, owners, shareholders, beneficial owners and officers are compared. A name candidate requires identity review. Cross-script transliteration and sectoral restrictions are not checked. Related companies are screened separately; ownership or control does not automatically transfer a result to another company.</p>',
+      table(screening_rows(data['sanctions_screening'])) if data['sanctions_screening'] else '<p>Not performed for this run.</p>',
+      '<details><summary>Source dates and import details</summary>',
+      table([{k:v for k,v in r.items() if k in {'source','status','rows_imported','retrieved_at','source_as_of','detail'}} for r in data['sources']]),'</details>',
+      '<h2>Company Evidence</h2>']
     for row in data['companies']:
         reg = row['registration_number']
         item = company(db,run_id,reg)
@@ -157,6 +168,7 @@ def report(db,run_id,path):
         blocks.append(table(item.pop('quality')))
         for name,records in item.items():
             if isinstance(records,list):
+                if name=='sanctions_screening':records=screening_rows(records)
                 blocks.append('<details><summary>'+esc(display_label(name))+' · '+str(len(records))+'</summary>')
                 blocks.append(table(records,exclude={'run_id','raw_json','row_hash','record_key'}))
                 if name=='tax_debt' and reg in evidence_links:
@@ -166,4 +178,4 @@ def report(db,run_id,path):
     blocks.append('</html>')
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text('\n'.join(blocks),encoding='utf-8')
-    return {'report':str(path),'run_id':run_id}
+    return {'report':str(path),'csv':str(csv_path),'run_id':run_id}

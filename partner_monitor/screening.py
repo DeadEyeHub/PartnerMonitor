@@ -57,7 +57,7 @@ def screen(db,run_id):
     checks={r['source']:dict(r) for r in db.execute('SELECT * FROM source_checks WHERE run_id=?',(run_id,))}
     loaded={s for s in LISTS if checks.get(s,{}).get('status')=='COMPLETED'}
     missing=sorted((LISTS|INPUTS)-{s for s,c in checks.items() if c['status']=='COMPLETED'})
-    stale=sorted(s for s in loaded if checks[s]['detail'])
+    stale=sorted(s for s in loaded if checks[s]['detail'] and not checks[s]['detail'].startswith('SOURCE_DATE_OLDER_THAN_7_DAYS'))
     entities={(r['source'],r['entity_id']):dict(r) for r in db.execute('SELECT * FROM sanction_entities WHERE run_id=?',(run_id,))}
     aliases=[]; exact=defaultdict(set); tokens=defaultdict(set)
     for row in db.execute('SELECT source,entity_id,name FROM sanction_names WHERE run_id=?',(run_id,)):

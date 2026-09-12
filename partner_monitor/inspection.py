@@ -79,6 +79,13 @@ def company(db,run_id,registration_number):
         result[view] = [dict(r) for r in db.execute(f'SELECT * FROM {quote(view)} WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
     result['financial_metrics'] = [dict(r) for r in db.execute('SELECT * FROM financial_metrics WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
     result['tax_debt'] = [dict(r) for r in db.execute('SELECT * FROM tax_debt WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
+    result['web_checks']=[{'search_status':'NOT_PERFORMED','analysis_status':'NOT_PERFORMED'}]
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_jobs'").fetchone():
+        job=db.execute('SELECT j.job_id FROM web_jobs j JOIN web_checks c USING(job_id) WHERE j.run_id=? AND c.registration_number=? ORDER BY j.created_at DESC,j.rowid DESC LIMIT 1',(run_id,registration_number)).fetchone()
+        if job:
+            for table in ('web_checks','web_findings'):
+                result[table]=[dict(r) for r in db.execute(f'SELECT * FROM {table} WHERE job_id=? AND registration_number=?',(job[0],registration_number))]
+            result['web_articles']=[dict(r) for r in db.execute('SELECT url,title,publication_date,content_kind,analysis_status,result_json,error_type FROM web_articles WHERE job_id=? AND registration_number=?',(job[0],registration_number))]
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='sanctions_screening'").fetchone():
         for name in ('sanctions_screening','sanctions_candidates'):
             result[name] = [dict(r) for r in db.execute(f'SELECT * FROM {name} WHERE run_id=? AND registration_number=?',(run_id,registration_number))]

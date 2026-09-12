@@ -25,6 +25,11 @@ def main():
     collect_parser.add_argument('--tax-debt-file',type=Path,default=os.getenv('TAX_DEBT_FILE') or None)
     collect_parser.add_argument('--snapshot',type=Path,help='Compatibility: replay the old register-only snapshot')
     commands.add_parser('sources')
+    web_parser=commands.add_parser('web',help='Search and analyze adverse media')
+    web_parser.add_argument('--run')
+    web_parser.add_argument('--job',help='Resume an existing web job')
+    web_parser.add_argument('--mode',choices=['all','search','analyze'],default='all')
+    web_parser.add_argument('--limit',type=int,default=3,help='Root companies in a new job (default: 3)')
     for command in ['status','company','report','compare']:
         p = commands.add_parser(command)
         p.add_argument('--run')
@@ -49,6 +54,9 @@ def main():
             else:
                 result = collect(args.input,data_dir,args.sources.split(',') if args.sources else None,
                                  args.replay,args.ownership_depth,args.tax_debt_file,args.refresh_debt,args.refresh_sanctions)
+        elif args.command=='web':
+            from .web_media import run_web
+            result=run_web(data_dir,args.run,args.job,args.mode,args.limit)
         else:
             db = open_database(data_dir)
             try:
@@ -64,7 +72,7 @@ def main():
     except Exception as exc:
         parser.exit(1, f'Collection failed ({type(exc).__name__}). Check input access and source availability.\n')
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    if args.command=='collect' and result.get('status') in {'PARTIAL','FAILED'}:
+    if args.command in {'collect','web'} and result.get('status') in {'PARTIAL','FAILED'}:
         raise SystemExit(2)
 
 

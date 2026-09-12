@@ -252,3 +252,68 @@ python -m unittest discover -s tests -v
 Local execution uses `DATA_DIR` from `.env` and a separate database on disk.
 Docker uses the shared SQLite volume. `docker compose down -v` deletes that volume
 and its data; removing a temporary container does not delete the data.
+
+
+## Adverse media: search and LLM analysis
+
+Put `TAVILY_API_KEY` and `OPENROUTER_API_KEY` in the ignored `.env` file.
+`OPENROUTER_MODEL` defaults to `openai/gpt-4.1-mini`; choose a model that supports
+strict JSON-schema output. Live provider access has not been tested without keys.
+API contracts: [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)
+and [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs).
+
+```sh
+docker compose build collector
+# Smoke run: only the first 3 root companies from the specified official-data run.
+docker compose run --rm collector web --run RUN_ID --limit 3
+# After inspection, run all 25 companies in a new job.
+docker compose run --rm collector web --run RUN_ID --limit 25
+docker compose run --rm collector report --run RUN_ID
+```
+
+Search and analysis can run separately. The returned job ID is required to resume;
+without it, a new job performs a fresh search and may incur new API charges.
+
+```sh
+docker compose run --rm collector web --run RUN_ID --mode search --limit 3
+docker compose run --rm collector web --job JOB_ID --mode analyze
+docker compose run --rm collector web --job JOB_ID
+```
+
+Each new job sends registration numbers, current/historical company names to Tavily.
+OpenRouter receives company identity (name, number, address, historical names) and
+article text. It does not receive our entire registry, owners' identity fields or VID
+PDFs. Provider retention policies apply. Keys remain in environment variables; request
+headers and error response bodies are not saved.
+
+Bounds per company: at most 5 Latvian/English queries, 5 results per query and 10
+article-analysis attempts per invocation, with up to 3 transport attempts for transient
+errors. Successful queries and analyses are reused when resuming a job. At most 18,000
+characters of each article are sent; truncation is recorded and keeps coverage PARTIAL.
+Search scope is a sample of available web results, never a complete adverse-media check.
+
+The pipeline uses Tavily raw article text, not direct requests to arbitrary article
+URLs. Snippet-only results are LIMITED_CONTENT and are not passed to the LLM.
+Tracking parameters are removed from URLs; repeated URLs and identical article bodies
+are deduplicated per company/job. Event grouping only combines identical evidence,
+event type and event date; semantic paraphrase grouping remains manual.
+
+`web_jobs`, `web_checks`, `web_queries`, `web_articles`, and `web_findings` preserve
+job scope, search errors, source URLs, publication dates, article text, identity
+assessment, model output and findings. RAW search responses and model requests/responses
+are stored under `data/raw/web` with content hashes. Each analysis records the actual
+model, prompt version, input, response and provider usage where returned. All findings
+are NEEDS_REVIEW. Exact quoted evidence must occur in the supplied article; wrong or
+uncertain company identity cannot create a finding. Allegations, investigations,
+reported decisions and resolved matters remain separate. No reliability score is
+assigned by the LLM. Model confidence is a self-reported estimate, not calibrated.
+
+Official collection status is not changed by a web job. The HTML company card shows
+the latest web job for that company and official run, including errors, partial text
+coverage, uncertain identity and findings. Unprocessed companies are NOT_PERFORMED.
+NO_RESULTS means the bounded search returned no articles, not that the company has no
+adverse history. SEARCHED means analysis has not completed. PARTIAL returns exit code 2;
+missing keys/configuration return exit code 1 before network requests.
+
+Offline automated tests use synthetic articles and mocked providers in temporary
+SQLite databases. They never add fictional findings to the production report.

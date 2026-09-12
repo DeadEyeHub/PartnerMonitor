@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from partner_monitor.database import connect
 from partner_monitor.sources import load_sources
-from partner_monitor.web_media import run_web,validate_analysis,canonical_url,snapshot,queries_for
+from partner_monitor.web_media import run_web,validate_analysis,canonical_url,snapshot,queries_for,plan_web,web_status
 from partner_monitor.inspection import company,report
 
 REG='40000000001'
@@ -78,6 +78,60 @@ class WebMediaTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=RuntimeError('offline')):
             job=run_web(self.root,'r')
         self.assertEqual(job['status'],'PARTIAL')
+        db=connect(self.root,load_sources());self.addCleanup(db.close)
+        self.assertEqual(web_status(db,job['job_id'])['checks'][0]['analysis_status'],'PARTIAL')
+
+    def test_dry_run_is_read_only_and_contains_no_keys(self):
+        path=self.root/'monitoring.db';before=path.read_bytes()
+        with patch('partner_monitor.web_media.post_json',side_effect=AssertionError('No network')):
+            plan=plan_web(self.root,'r')
+        self.assertEqual(plan['companies'][0]['company']['registration_number'],REG)
+        self.assertNotIn('test-placeholder',json.dumps(plan))
+        self.assertEqual(before,path.read_bytes())
+
+    def test_full_text_upgrades_identical_snippet(self):
+        for same_url in (True,False):
+            responses=[{'results':[{'url':'https://example.org/snippet','content':BODY}]},
+                       {'results':[{'url':'https://example.org/snippet' if same_url else 'https://example.org/full','raw_content':BODY}]},
+                       {'results':[]}]
+            with self.subTest(same_url=same_url),redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=responses),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
+                job=run_web(self.root,'r')
+            self.assertEqual(job['status'],'COMPLETED');self.assertEqual(llm.call_count,1)
+
+    def test_resume_pins_model_and_does_not_repeat_successful_searches(self):
+        response={'results':[{'url':'https://example.org/story','raw_content':BODY}]}
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response):
+            job=run_web(self.root,'r',mode='search')
+        with redirect_stdout(io.StringIO()),patch.dict(os.environ,{'OPENROUTER_MODEL':'changed/model'}),patch('partner_monitor.web_media.search_api',side_effect=AssertionError('No repeated search')),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
+            run_web(self.root,job_id=job['job_id'])
+        self.assertEqual(llm.call_args.args[-1],'fixture/model')
+
+    def test_pipeline_drains_pending_articles_and_exports(self):
+        from partner_monitor.workflow import run_workflow
+        results=[{'url':'https://example.org/'+str(i),'raw_content':BODY+' Article '+str(i)} for i in range(12)]
+        responses=[{'results':results[i:i+5]} for i in range(0,12,5)]
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=responses),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
+            job=run_workflow(self.root,self.root/'report.html',run_id='r')
+        self.assertEqual(job['status'],'COMPLETED');self.assertEqual(llm.call_count,12)
+        self.assertTrue((self.root/'report.csv').exists())
+        self.assertIn('Registration number matches',(self.root/'report.html').read_text(encoding='utf-8'))
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=AssertionError('No network')),patch('partner_monitor.web_media.analyze_api',side_effect=AssertionError('No network')):
+            resumed=run_workflow(self.root,self.root/'report.html',job_id=job['job_id'])
+        self.assertEqual(resumed['web']['findings'],12)
+
+    def test_pipeline_partial_still_exports_and_search_failure_is_visible(self):
+        from partner_monitor.workflow import run_workflow
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=RuntimeError('offline')):
+            job=run_workflow(self.root,self.root/'partial.html',run_id='r')
+        self.assertEqual(job['status'],'PARTIAL')
+        self.assertEqual(job['web']['errors'][0]['stage'],'search')
+        self.assertTrue((self.root/'partial.html').exists())
+
+    def test_pipeline_preflights_before_collection(self):
+        from partner_monitor.workflow import run_workflow
+        with patch.dict(os.environ,{'TAVILY_API_KEY':''}),patch('partner_monitor.workflow.collect') as collector,self.assertRaises(ValueError):
+            run_workflow(self.root,self.root/'report.html',input_path=Path('input.csv'))
+        collector.assert_not_called()
 
     def test_missing_key_fails_before_api(self):
         with patch.dict(os.environ,{'TAVILY_API_KEY':''}),patch('partner_monitor.web_media.search_api') as api,self.assertRaises(ValueError):
@@ -110,6 +164,8 @@ class WebMediaTests(unittest.TestCase):
         self.assertEqual(canonical_url('https://Example.org/a?utm_source=x&id=1#fragment'),'https://example.org/a?id=1')
         for url in ['javascript:alert(1)','file:///etc/passwd','https://user:password@example.org']:
             with self.assertRaises(ValueError):canonical_url(url)
-        queries=queries_for({'name':'New Name','historical_names':['Old Name'],'registration_number':REG})
+        queries=queries_for({'name':'SIA "New Name"','historical_names':['Old Name','Older Name'],'registration_number':REG})
         self.assertTrue(any('Old Name' in q for q in queries))
+        self.assertTrue(any('Older Name' in q for q in queries))
+        self.assertTrue(any('"New Name"' in q for q in queries))
         self.assertLessEqual(len(queries),5)

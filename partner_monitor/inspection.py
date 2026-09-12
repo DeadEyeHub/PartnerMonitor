@@ -86,6 +86,11 @@ def company(db,run_id,registration_number):
             for table in ('web_checks','web_findings'):
                 result[table]=[dict(r) for r in db.execute(f'SELECT * FROM {table} WHERE job_id=? AND registration_number=?',(job[0],registration_number))]
             result['web_articles']=[dict(r) for r in db.execute('SELECT url,title,publication_date,content_kind,analysis_status,result_json,error_type FROM web_articles WHERE job_id=? AND registration_number=?',(job[0],registration_number))]
+            result['web_queries']=[dict(r) for r in db.execute('SELECT query,status,error_type FROM web_queries WHERE job_id=? AND registration_number=? ORDER BY query',(job[0],registration_number))]
+            for article in result['web_articles']:
+                analysis=json.loads(article.pop('result_json') or '{}')
+                article['identity']=analysis.get('identity')
+                article['identity_reason']=analysis.get('identity_reason')
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='sanctions_screening'").fetchone():
         for name in ('sanctions_screening','sanctions_candidates'):
             result[name] = [dict(r) for r in db.execute(f'SELECT * FROM {name} WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
@@ -161,6 +166,10 @@ def report(db,run_id,path):
       '<details><summary>Source dates and import details</summary>',
       table([{k:v for k,v in r.items() if k in {'source','status','rows_imported','retrieved_at','source_as_of','detail'}} for r in data['sources']]),'</details>',
       '<h2>Company Evidence</h2>']
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_jobs'").fetchone():
+        jobs=[dict(r) for r in db.execute('SELECT job_id,created_at,finished_at,status FROM web_jobs WHERE run_id=? ORDER BY created_at DESC,rowid DESC',(run_id,))]
+        blocks[-1:-1]=['<h2>Adverse Media Jobs</h2>',
+          '<p>Each company card shows its latest web job for this official-data run. Job status covers only its selected companies. Findings require review; failed or limited searches do not establish an absence of adverse information.</p>',table(jobs)]
     for row in data['companies']:
         reg = row['registration_number']
         item = company(db,run_id,reg)

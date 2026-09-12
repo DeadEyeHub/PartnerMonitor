@@ -30,6 +30,18 @@ def main():
     web_parser.add_argument('--job',help='Resume an existing web job')
     web_parser.add_argument('--mode',choices=['all','search','analyze'],default='all')
     web_parser.add_argument('--limit',type=int,default=3,help='Root companies in a new job (default: 3)')
+    web_parser.add_argument('--dry-run',action='store_true',help='Preview company scope without provider requests or database writes')
+    job_parser=commands.add_parser('web-status',help='Inspect a saved web job without provider requests')
+    job_parser.add_argument('--job',required=True)
+    workflow_parser=commands.add_parser('pipeline',help='Collect or reuse official data, process adverse media, export HTML/CSV')
+    scope=workflow_parser.add_mutually_exclusive_group(required=True)
+    scope.add_argument('--run',help='Reuse an existing official-data run')
+    scope.add_argument('--job',help='Resume an existing media job and rebuild reports')
+    scope.add_argument('--input',type=Path,help='Collect official data for a CSV/XLSX input first')
+    workflow_parser.add_argument('--replay',help='Replay official snapshots when using --input')
+    workflow_parser.add_argument('--limit',type=int,default=3)
+    workflow_parser.add_argument('--analysis-passes',type=int,choices=range(1,4),default=3)
+    workflow_parser.add_argument('--output',type=Path,default=Path(os.getenv('REPORT_DIR','data/reports'))/'latest.html')
     for command in ['status','company','report','compare']:
         p = commands.add_parser(command)
         p.add_argument('--run')
@@ -55,8 +67,26 @@ def main():
                 result = collect(args.input,data_dir,args.sources.split(',') if args.sources else None,
                                  args.replay,args.ownership_depth,args.tax_debt_file,args.refresh_debt,args.refresh_sanctions)
         elif args.command=='web':
-            from .web_media import run_web
-            result=run_web(data_dir,args.run,args.job,args.mode,args.limit)
+            from .web_media import run_web,plan_web
+            if args.dry_run:
+                if args.job or args.mode!='all':
+                    raise ValueError('--dry-run previews a new job; use --run and --limit')
+                result=plan_web(data_dir,args.run,args.limit)
+            else:
+                result=run_web(data_dir,args.run,args.job,args.mode,args.limit)
+        elif args.command=='web-status':
+            from .web_media import web_status
+            db=open_database(data_dir)
+            try:
+                if not db.execute("SELECT 1 FROM sqlite_master WHERE name='web_jobs'").fetchone():
+                    raise ValueError('No web jobs yet')
+                result=web_status(db,args.job)
+            finally:
+                db.close()
+        elif args.command=='pipeline':
+            from .workflow import run_workflow
+            result=run_workflow(data_dir,args.output,run_id=args.run,job_id=args.job,
+                input_path=args.input,replay=args.replay,limit=args.limit,analysis_passes=args.analysis_passes)
         else:
             db = open_database(data_dir)
             try:
@@ -72,7 +102,7 @@ def main():
     except Exception as exc:
         parser.exit(1, f'Collection failed ({type(exc).__name__}). Check input access and source availability.\n')
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    if args.command in {'collect','web'} and result.get('status') in {'PARTIAL','FAILED'}:
+    if args.command in {'collect','web','pipeline'} and result.get('status') in {'PARTIAL','FAILED'}:
         raise SystemExit(2)
 
 

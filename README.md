@@ -2,7 +2,8 @@
 
 Collect official data about Latvian companies in SQLite. The first stage covers
 fact ingestion, run history, source quality checks, and result inspection.
-Sanctions name screening is implemented as review candidates. LLM analysis and the final risk engine remain later stages.
+Sanctions name screening produces review candidates. Adverse-media search and LLM
+extraction are implemented; the final risk engine remains a later stage.
 
 ## Run and inspect
 
@@ -258,7 +259,8 @@ and its data; removing a temporary container does not delete the data.
 
 Put `TAVILY_API_KEY` and `OPENROUTER_API_KEY` in the ignored `.env` file.
 `OPENROUTER_MODEL` defaults to `openai/gpt-4.1-mini`; choose a model that supports
-strict JSON-schema output. Live provider access has not been tested without keys.
+strict JSON-schema output. Keys are configured; live provider validation remains
+pending explicit authorization required by the environment's automatic approval review.
 API contracts: [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)
 and [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs).
 
@@ -270,6 +272,15 @@ docker compose run --rm collector web --run RUN_ID --limit 3
 docker compose run --rm collector web --run RUN_ID --limit 25
 docker compose run --rm collector report --run RUN_ID
 ```
+
+For a single command that processes media and exports HTML/CSV, use
+`docker compose run --rm collector pipeline --run RUN_ID --limit 3`.
+Preview the scope without provider calls using
+`docker compose run --rm collector web --run RUN_ID --limit 3 --dry-run`.
+Inspect saved progress with `docker compose run --rm collector web-status --job JOB_ID`
+and resume with `docker compose run --rm collector pipeline --job JOB_ID`.
+See [the pipeline operation guide](docs/media-pipeline.md) for collection integration,
+request bounds, data transfers, retries, statuses and validation limits.
 
 Search and analysis can run separately. The returned job ID is required to resume;
 without it, a new job performs a fresh search and may incur new API charges.
@@ -287,10 +298,12 @@ PDFs. Provider retention policies apply. Keys remain in environment variables; r
 headers and error response bodies are not saved.
 
 Bounds per company: at most 5 Latvian/English queries, 5 results per query and 10
-article-analysis attempts per invocation, with up to 3 transport attempts for transient
+article-analysis attempts per `web` invocation, with up to 3 transport attempts for transient
 errors. Successful queries and analyses are reused when resuming a job. At most 18,000
 characters of each article are sent; truncation is recorded and keeps coverage PARTIAL.
 Search scope is a sample of available web results, never a complete adverse-media check.
+The `pipeline` command can perform up to three analysis passes to drain pending
+articles; automatic extra passes do not retry errors. Explicit resume retries errors.
 
 The pipeline uses Tavily raw article text, not direct requests to arbitrary article
 URLs. Snippet-only results are LIMITED_CONTENT and are not passed to the LLM.

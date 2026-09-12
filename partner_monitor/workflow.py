@@ -26,7 +26,7 @@ def run_workflow(data_dir, output, *, run_id=None, job_id=None, input_path=None,
         collection_result = collect(input_path,data_dir,replay_run=replay,
                                     debt_file=os.getenv('TAX_DEBT_FILE') or None)
         run_id = collection_result['run_id']
-    web = run_web(data_dir,run_id,job_id,limit=limit)
+    web = run_web(data_dir,run_id,job_id,limit=limit,log_dir=Path(output).parent)
     run_id, job_id = web['run_id'], web['job_id']
     # Continue the remaining articles; do not repeatedly retry permanent errors.
     for _ in range(1,analysis_passes):
@@ -37,7 +37,7 @@ def run_workflow(data_dir, output, *, run_id=None, job_id=None, input_path=None,
             db.close()
         if not pending:
             break
-        web = run_web(data_dir,job_id=job_id,mode='analyze',retry_errors=False)
+        web = run_web(data_dir,job_id=job_id,mode='analyze',retry_errors=False,log_dir=Path(output).parent)
     db = open_database(data_dir)
     try:
         official = db.execute('SELECT status FROM monitoring_runs WHERE run_id=?',(resolve_run(db,run_id),)).fetchone()[0]

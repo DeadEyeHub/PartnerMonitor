@@ -97,6 +97,43 @@ already committed to SQLite remains available for resume.
 
 ## Outputs and remaining scope
 
+### Live execution logs
+
+Every `web` and `pipeline` invocation appends to the job's durable event journal:
+`/data/raw/web_logs/JOB_ID.jsonl`. Events are flushed to disk before transport starts
+and after each response. Resume appends events instead of replacing the earlier log.
+An interrupted final JSONL line is ignored when reading; earlier complete events remain.
+
+The HTML log is updated after every event at
+`REPORT_DIR/web-logs/JOB_ID/index.html` (normally `data/reports/web-logs` on the host).
+Refresh the index during execution. Event numbers open separate HTML detail pages in
+the same folder, keeping the timeline small even when article text is large. Copy the
+whole job folder when sharing a log. `pipeline --output` places the log alongside that
+report. The main HTML report links to available job logs and rebuilds them from JSONL.
+
+The journal records:
+
+- UTC time, company, job, stage, mode, requested model and prompt version;
+- exact application request bodies, including queries, prompts and article text;
+- every HTTP attempt, status, duration, network error and retry delay;
+- successful provider responses, including actual model, finish reason, usage,
+  token counts and cost fields when supplied by the provider;
+- parsing and evidence-validation outcomes, validation reasons, snapshot paths;
+- duplicate decisions, snippet upgrades, reused searches and final article statuses;
+- company/pass completion and caught interruptions.
+
+Token usage and cost are provider-reported values, not a separately verified billing
+total. Non-streaming requests reveal the sent input and returned output, not internal
+model execution or token-by-token progress. A force-killed process may leave a request
+without a response event, which remains visible in the timeline.
+
+Authorization headers, cookies and raw HTTP error bodies are not collected. Sensitive
+structured fields and configured secret values are masked before writing journals,
+HTML and new provider snapshots. Exception messages from transport are not recorded.
+Article text and provider output are HTML-escaped, so scripts in source content cannot
+execute in a log page. Logs include the company context and article text and remain
+under ignored data directories; no credentials or runtime logs belong in Git.
+
 HTML includes job history, per-company queries and errors, article identity assessment
 and its reason, source URLs and quoted findings. Each company card uses its latest job
 for that official run; this can combine different job dates in one report. CSV retains

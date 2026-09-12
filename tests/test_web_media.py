@@ -53,6 +53,10 @@ class WebMediaTests(unittest.TestCase):
         self.assertEqual(data['web_findings'][0]['review_status'],'NEEDS_REVIEW')
         report(db,'r',self.root/'report.html')
         self.assertIn('An investigation was reported',(self.root/'report.html').read_text(encoding='utf-8'))
+        self.assertIn('Tavily and model log',(self.root/'report.html').read_text(encoding='utf-8'))
+        log_path=Path(output['log_html'])
+        self.assertTrue(log_path.exists())
+        self.assertIn('ANALYSIS_VALIDATED',log_path.read_text(encoding='utf-8'))
         for p in (self.root/'raw/web').glob('*.json'):
             self.assertEqual(hashlib.sha256(p.read_bytes()).hexdigest(),p.stem)
 

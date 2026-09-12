@@ -15,6 +15,7 @@ from .database import connect
 from .sources import load_sources
 from .inspection import resolve_run, open_database
 from .ur import utc_now
+from .web_logging import WebLog, emit, redact
 
 
 class ProviderError(RuntimeError):
@@ -91,7 +92,7 @@ def canonical_url(url):
 
 
 def snapshot(root, value):
-    payload=json.dumps(value,ensure_ascii=False,sort_keys=True).encode('utf-8')
+    payload=json.dumps(redact(value),ensure_ascii=False,sort_keys=True).encode('utf-8')
     sha=hashlib.sha256(payload).hexdigest()
     path=Path('raw/web')/(sha+'.json')
     (root/path).parent.mkdir(parents=True,exist_ok=True)
@@ -102,17 +103,28 @@ def snapshot(root, value):
 def post_json(url,key,payload):
     # Do not persist headers or raw error bodies, which can contain credentials.
     for attempt in range(3):
+        started=time.monotonic()
+        emit('HTTP_REQUEST',attempt=attempt+1,url=url,request=payload)
         try:
             response=requests.post(url,headers={'Authorization':'Bearer '+key},json=payload,timeout=(10,90))
+            elapsed=round((time.monotonic()-started)*1000)
+            emit('HTTP_RESPONSE',attempt=attempt+1,http_status=response.status_code,duration_ms=elapsed)
             if response.status_code in (429,500,502,503,504) and attempt<2:
+                emit('HTTP_RETRY',attempt=attempt+1,delay_seconds=2**attempt,reason='HTTP_'+str(response.status_code))
                 time.sleep(2**attempt);continue
             if response.status_code!=200:
                 raise ProviderError('API_HTTP_'+str(response.status_code))
-            result=response.json()
+            try:result=response.json()
+            except ValueError:
+                emit('INVALID_RESPONSE_JSON',attempt=attempt+1)
+                raise ProviderError('API_INVALID_JSON') from None
+            emit('PROVIDER_RESULT',attempt=attempt+1,response=result)
             if not isinstance(result,dict):raise ValueError('Invalid API response')
             return result
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            emit('HTTP_NETWORK_ERROR',attempt=attempt+1,error_type=type(exc).__name__,duration_ms=round((time.monotonic()-started)*1000))
             if attempt==2:raise ProviderError('API_NETWORK_ERROR') from None
+            emit('HTTP_RETRY',attempt=attempt+1,delay_seconds=2**attempt,reason='NETWORK_ERROR')
             time.sleep(2**attempt)
     raise ProviderError('API_UNAVAILABLE')
 
@@ -223,12 +235,12 @@ def store_article(db, job_id, reg, result, saved):
     try:
         url = canonical_url(result.get('url',''))
     except (ValueError, TypeError, AttributeError):
-        return
+        return 'INVALID_URL_SKIPPED'
     raw = result.get('raw_content')
     raw = raw if isinstance(raw,str) and raw.strip() else None
     body = raw or result.get('content') or ''
     if not isinstance(body,str):
-        return
+        return 'INVALID_CONTENT_SKIPPED'
     article_id = hashlib.sha256(url.encode()).hexdigest()
     content = body[:18000]
     kind = ('TRUNCATED_RAW_CONTENT' if len(body)>18000 else 'RAW_CONTENT') if raw else 'SNIPPET'
@@ -237,18 +249,20 @@ def store_article(db, job_id, reg, result, saved):
     if existing:
         if existing[0]=='SNIPPET' and raw:
             db.execute("UPDATE web_articles SET content=?,content_kind=?,snapshot_path=?,analysis_status='PENDING',error_type=NULL WHERE job_id=? AND registration_number=? AND article_id=?", (content,kind,saved,job_id,reg,article_id))
-        return
+            return 'SNIPPET_UPGRADED'
+        return 'EXISTING_URL_REUSED'
     duplicate = db.execute('SELECT article_id,content_kind FROM web_articles WHERE job_id=? AND registration_number=? AND content=?', (job_id,reg,content)).fetchone() if body else None
     if duplicate and (not raw or duplicate['content_kind']!='SNIPPET'):
-        return
+        return 'DUPLICATE_BODY_SKIPPED'
     # A full-text source replaces a snippet-only duplicate, preserving its actual URL.
     if duplicate:
         db.execute("DELETE FROM web_articles WHERE job_id=? AND registration_number=? AND article_id=? AND content_kind='SNIPPET'", (job_id,reg,duplicate['article_id']))
     db.execute('INSERT INTO web_articles VALUES (?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)',
         (job_id,reg,article_id,url,str(result.get('title','')),result.get('published_date'),content,kind,saved,'PENDING' if raw else 'LIMITED_CONTENT'))
+    return 'FULL_TEXT_REPLACED_SNIPPET' if duplicate else kind+'_STORED'
 
 
-def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=True):
+def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=True,log_dir=None):
     if mode not in {'all','search','analyze'}:raise ValueError('Invalid web mode')
     if not 1<=limit<=100:raise ValueError('Company limit must be 1..100')
     search_key=os.getenv('TAVILY_API_KEY','').strip();llm_key=os.getenv('OPENROUTER_API_KEY','').strip()
@@ -257,6 +271,7 @@ def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=Tru
     if mode in {'all','analyze'} and (not llm_key or not model):raise ValueError('Set OPENROUTER_API_KEY and OPENROUTER_MODEL in .env')
     if mode=='analyze' and not job_id:raise ValueError('Analysis requires --job from a search run')
     db=connect(data_dir,load_sources());initialize(db)
+    logger=None
     try:
         if job_id:
             job=db.execute('SELECT * FROM web_jobs WHERE job_id=?',(job_id,)).fetchone()
@@ -278,19 +293,32 @@ def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=Tru
         with db:
             db.execute("UPDATE web_jobs SET status='RUNNING',finished_at=NULL WHERE job_id=?",(job_id,))
         print('web job: '+job_id+' (resume with --job '+job_id+')',flush=True)
+        logger=WebLog(data_dir,job_id,log_dir)
+        logger.emit('PASS_STARTED',run_id=run_id,mode=mode,model=model,prompt_version=VERSION,companies=regs,retry_errors=retry_errors)
         for reg in regs:
             context=company_context(db,run_id,reg)
+            logger.context={'company':reg}
+            logger.emit('COMPANY_STARTED',identity=context)
             if mode in {'all','search'}:
                 for query in queries_for(context):
                     existing=db.execute('SELECT status FROM web_queries WHERE job_id=? AND registration_number=? AND query=?',(job_id,reg,query)).fetchone()
-                    if existing and existing[0]=='COMPLETED':continue
+                    if existing and existing[0]=='COMPLETED':
+                        logger.emit('SEARCH_REUSED',stage='tavily',query=query)
+                        continue
                     try:
-                        response=search_api(query,search_key,5);saved=snapshot(data_dir,response)
+                        with logger.scope(stage='tavily',query=query):
+                            logger.emit('SEARCH_STARTED')
+                            response=search_api(query,search_key,5)
+                            saved=snapshot(data_dir,response)
+                            logger.emit('SEARCH_RECEIVED',results=len(response['results']),snapshot=saved,response=response)
                         with db:
                             for result in response['results']:
-                                store_article(db,job_id,reg,result,saved)
+                                decision=store_article(db,job_id,reg,result,saved)
+                                logger.emit('ARTICLE_DECISION',stage='tavily',action=decision,url=result.get('url') if isinstance(result,dict) else None)
                             db.execute("INSERT OR REPLACE INTO web_queries VALUES (?,?,?,'COMPLETED',?,NULL)",(job_id,reg,query,saved))
+                        logger.emit('SEARCH_STORED',stage='tavily',query=query)
                     except Exception as exc:
+                        logger.emit('SEARCH_ERROR',stage='tavily',query=query,error_type=error_code(exc))
                         with db:db.execute("INSERT OR REPLACE INTO web_queries VALUES (?,?,?,'ERROR',NULL,?)",(job_id,reg,query,error_code(exc)))
                 errors=db.execute("SELECT COUNT(*) FROM web_queries WHERE job_id=? AND registration_number=? AND status='ERROR'",(job_id,reg)).fetchone()[0]
                 with db:db.execute('UPDATE web_checks SET search_status=? WHERE job_id=? AND registration_number=?',('PARTIAL' if errors else 'COMPLETED',job_id,reg))
@@ -300,7 +328,10 @@ def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=Tru
                     article=dict(row)
                     saved=None
                     try:
-                        result,audit=analyze_api(context,{k:article[k] for k in ('url','title','publication_date','content')},llm_key,model)
+                        with logger.scope(stage='openrouter',article_id=row['article_id'],url=row['url']):
+                            logger.emit('ANALYSIS_STARTED',model=model,content_kind=article['content_kind'],characters=len(article['content']))
+                            result,audit=analyze_api(context,{k:article[k] for k in ('url','title','publication_date','content')},llm_key,model)
+                            logger.emit('ANALYSIS_RECEIVED',audit=audit,parsed_result=result)
                         saved=snapshot(data_dir,audit)
                         validate_analysis(result,article['content'])
                         with db:
@@ -311,7 +342,9 @@ def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=Tru
                                 group=hashlib.sha256(json.dumps([reg,f['finding_type'],f['event_date'],' '.join(f['evidence_quote'].casefold().split())]).encode()).hexdigest()
                                 db.execute('INSERT OR REPLACE INTO web_findings VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                                   (job_id,reg,row['article_id'],index,f['finding_type'],f['severity'],f['event_status'],f['event_date'],f['summary'],f['evidence_quote'],f['confidence'],row['url'],group,'NEEDS_REVIEW'))
+                        logger.emit('ANALYSIS_VALIDATED',stage='openrouter',article_id=row['article_id'],identity=result['identity'],findings=len(result['findings']),snapshot=saved)
                     except Exception as exc:
+                        logger.emit('ANALYSIS_ERROR',stage='openrouter',article_id=row['article_id'],error_type=error_code(exc),validation_reason=str(exc) if isinstance(exc,ValueError) else None,snapshot=saved)
                         with db:db.execute("UPDATE web_articles SET analysis_status='ERROR',error_type=?,analysis_path=? WHERE job_id=? AND registration_number=? AND article_id=?",(error_code(exc),saved,job_id,reg,row['article_id']))
                 pending=db.execute("SELECT COUNT(*) FROM web_articles WHERE job_id=? AND registration_number=? AND (analysis_status!='COMPLETED' OR content_kind='TRUNCATED_RAW_CONTENT')",(job_id,reg)).fetchone()[0]
                 count=db.execute('SELECT COUNT(*) FROM web_articles WHERE job_id=? AND registration_number=?',(job_id,reg)).fetchone()[0]
@@ -319,10 +352,18 @@ def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=Tru
                 analysis_state='PARTIAL' if pending or search_state!='COMPLETED' else 'COMPLETED' if count else 'NO_RESULTS'
                 with db:db.execute('UPDATE web_checks SET analysis_status=? WHERE job_id=? AND registration_number=?',(analysis_state,job_id,reg))
             print('web: '+reg+' processed',flush=True)
+            logger.emit('COMPANY_FINISHED',check=dict(db.execute('SELECT * FROM web_checks WHERE job_id=? AND registration_number=?',(job_id,reg)).fetchone()),
+                        articles=[dict(r) for r in db.execute('SELECT article_id,url,content_kind,analysis_status,error_type FROM web_articles WHERE job_id=? AND registration_number=?',(job_id,reg))])
         incomplete=db.execute("SELECT COUNT(*) FROM web_checks WHERE job_id=? AND (search_status!='COMPLETED' OR analysis_status NOT IN ('COMPLETED','NO_RESULTS'))",(job_id,)).fetchone()[0]
         search_errors=db.execute("SELECT COUNT(*) FROM web_checks WHERE job_id=? AND search_status!='COMPLETED'",(job_id,)).fetchone()[0]
         status=('PARTIAL' if search_errors else 'SEARCHED') if mode=='search' else 'PARTIAL' if incomplete else 'COMPLETED'
         with db:db.execute('UPDATE web_jobs SET status=?,finished_at=? WHERE job_id=?',(status,utc_now(),job_id))
+        logger.context={}
+        logger.emit('PASS_FINISHED',status=status)
         return {'job_id':job_id,'run_id':run_id,'status':status,'companies':len(regs),
+          'log_html':str(logger.folder/'index.html'),
           'findings':db.execute('SELECT COUNT(*) FROM web_findings WHERE job_id=?',(job_id,)).fetchone()[0]}
+    except BaseException as exc:
+        if logger:logger.emit('PASS_INTERRUPTED',error_type=type(exc).__name__)
+        raise
     finally:db.close()

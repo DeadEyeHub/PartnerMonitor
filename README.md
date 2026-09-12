@@ -279,6 +279,11 @@ Preview the scope without provider calls using
 `docker compose run --rm collector web --run RUN_ID --limit 3 --dry-run`.
 Inspect saved progress with `docker compose run --rm collector web-status --job JOB_ID`
 and resume with `docker compose run --rm collector pipeline --job JOB_ID`.
+Every job writes a live HTML execution log under `data/reports/web-logs/JOB_ID/index.html`.
+Refresh it during execution; open event numbers for full request/response details,
+timings, retries, usage and validation outcomes. The main report links to these logs.
+The durable JSONL journal lives in the SQLite data volume under `raw/web_logs`.
+Keys, authorization headers and raw HTTP error bodies are excluded.
 See [the pipeline operation guide](docs/media-pipeline.md) for collection integration,
 request bounds, data transfers, retries, statuses and validation limits.
 

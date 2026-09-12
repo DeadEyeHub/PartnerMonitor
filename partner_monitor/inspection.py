@@ -168,8 +168,15 @@ def report(db,run_id,path):
       '<h2>Company Evidence</h2>']
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_jobs'").fetchone():
         jobs=[dict(r) for r in db.execute('SELECT job_id,created_at,finished_at,status FROM web_jobs WHERE run_id=? ORDER BY created_at DESC,rowid DESC',(run_id,))]
+        from .web_logging import export_log
+        log_links=[]
+        for job in jobs:
+            if (data_dir/'raw/web_logs'/(job['job_id']+'.jsonl')).exists():
+                log_path=export_log(data_dir,job['job_id'],path.parent)
+                log_links.append('<li><a href="'+esc(log_path.relative_to(path.parent).as_posix())+'">Tavily and model log — '+esc(job['job_id'])+'</a></li>')
         blocks[-1:-1]=['<h2>Adverse Media Jobs</h2>',
           '<p>Each company card shows its latest web job for this official-data run. Job status covers only its selected companies. Findings require review; failed or limited searches do not establish an absence of adverse information.</p>',table(jobs)]
+        if log_links:blocks[-1:-1]=['<ul>'+''.join(log_links)+'</ul>']
     for row in data['companies']:
         reg = row['registration_number']
         item = company(db,run_id,reg)

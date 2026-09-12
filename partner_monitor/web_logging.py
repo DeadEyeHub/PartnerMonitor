@@ -51,9 +51,26 @@ def render_index(events,folder,job_id):
     for e in events:
         values=[e['time'],e.get('company',''),e.get('stage',''),e.get('event',''),e.get('duration_ms',''),e.get('http_status','')]
         rows.append('<tr><td><a href="'+str(e['sequence']).zfill(6)+'.html">'+str(e['sequence'])+'</a></td>'+''.join('<td>'+html.escape(str(v))+'</td>' for v in values)+'</tr>')
-    atomic_text(folder/'index.html',page('Tavily and Model Log — '+job_id,
+    links=''.join('<p><a href="'+name+'">'+label+'</a></p>' for name,label in [('tavily.html','Tavily requests and responses'),('model.html','Model requests and responses')] if (folder/name).exists())
+    atomic_text(folder/'index.html',page('Tavily and Model Log — '+job_id,links+
         '<p>Updated after every event. Refresh this page during execution. Times are UTC. Open an event number for complete request/response details. Credentials are redacted. Only provider-returned data is available; internal model execution is not observable.</p>'
         '<table><thead><tr><th>Details</th><th>Time</th><th>Company</th><th>Stage</th><th>Event</th><th>Duration ms</th><th>HTTP</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table>'))
+
+
+def render_exchanges(events,folder):
+    for stage,filename,title in [('tavily','tavily.html','Tavily requests and responses'),('openrouter','model.html','Model requests and responses')]:
+        pairs=[]
+        for e in events:
+            if e.get('stage')!=stage:continue
+            if e['event']=='HTTP_REQUEST':pairs.append({'company':e.get('company'),'phase':e.get('phase','search' if stage=='tavily' else 'analysis'),'request':e['request']})
+            elif pairs and e['event']=='HTTP_RESPONSE':pairs[-1]['http_status']=e['http_status']
+            elif pairs and e['event']=='PROVIDER_RESULT':pairs[-1]['response']=e['response']
+        blocks=[]
+        for index,pair in enumerate(pairs,1):
+            blocks.append('<h2>'+str(index)+' — '+html.escape(str(pair['company']))+' — '+html.escape(pair['phase'])+'</h2><h3>Request</h3><pre>'+html.escape(json.dumps(pair['request'],ensure_ascii=False,indent=2))+'</pre>')
+            response=pair.get('response',{'http_status':pair.get('http_status'),'note':'No successful response body recorded'})
+            blocks.append('<h3>Response</h3><pre>'+html.escape(json.dumps(response,ensure_ascii=False,indent=2))+'</pre>')
+        atomic_text(folder/filename,page(title,''.join(blocks) or '<p>No requests recorded.</p>'))
 
 
 def read_events(path):
@@ -70,6 +87,7 @@ def export_log(data_dir,job_id,report_dir):
     events=read_events(Path(data_dir)/'raw/web_logs'/(job_id+'.jsonl'))
     folder=Path(report_dir)/'web-logs'/job_id
     for event in events:render_event(redact(event),folder)
+    render_exchanges(events,folder)
     render_index(events,folder,job_id)
     return folder/'index.html'
 
@@ -106,6 +124,7 @@ class WebLog:
             os.fsync(stream.fileno())
         self.events.append(entry)
         render_event(entry,self.folder)
+        if event=='PASS_FINISHED':render_exchanges(self.events,self.folder)
         render_index(self.events,self.folder,self.job_id)
         print('web log: '+entry['time']+' '+str(entry.get('company',''))+' '+event,flush=True)
 

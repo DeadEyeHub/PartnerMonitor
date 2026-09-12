@@ -37,9 +37,13 @@ class WebMediaTests(unittest.TestCase):
         db.commit();db.close()
         env=patch.dict(os.environ,{'TAVILY_API_KEY':'test-placeholder','OPENROUTER_API_KEY':'test-placeholder','OPENROUTER_MODEL':'fixture/model'})
         env.start();self.addCleanup(env.stop)
+        triage=patch('partner_monitor.media_selection.triage_api',return_value=({'decision':'inspect','reason':'Potential company event'},{}))
+        triage.start();self.addCleanup(triage.stop)
+        extract=patch('partner_monitor.media_selection.extract_api',return_value={'results':[],'failed_results':[]})
+        extract.start();self.addCleanup(extract.stop)
 
     def test_end_to_end_dedup_resume_report_and_evidence(self):
-        response={'results':[{'url':'https://example.org/story?utm_source=x','title':'Investigation','raw_content':BODY}]}
+        response={'results':[{'url':'https://example.org/story?utm_source=x','title':'Investigation','content':BODY,'raw_content':BODY}]}
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{'response':result()})) as llm:
             output=run_web(self.root,'r')
         self.assertEqual(output['status'],'COMPLETED');self.assertEqual(output['findings'],1)
@@ -96,14 +100,44 @@ class WebMediaTests(unittest.TestCase):
     def test_full_text_upgrades_identical_snippet(self):
         for same_url in (True,False):
             responses=[{'results':[{'url':'https://example.org/snippet','content':BODY}]},
-                       {'results':[{'url':'https://example.org/snippet' if same_url else 'https://example.org/full','raw_content':BODY}]},
+                       {'results':[{'url':'https://example.org/snippet' if same_url else 'https://example.org/full','content':BODY,'raw_content':BODY}]},
                        {'results':[]}]
             with self.subTest(same_url=same_url),redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=responses),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
                 job=run_web(self.root,'r')
-            self.assertEqual(job['status'],'COMPLETED');self.assertEqual(llm.call_count,1)
+            self.assertEqual(job['status'],'COMPLETED' if same_url else 'PARTIAL');self.assertEqual(llm.call_count,1)
+
+    def test_unrelated_snippet_does_not_send_raw_text_to_model(self):
+        response={'results':[{'url':'https://example.org/unrelated','title':'Generic court homepage',
+            'content':'General legal advice','raw_content':BODY*1000}]}
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.triage_api') as triage,patch('partner_monitor.web_media.analyze_api') as llm:
+            job=run_web(self.root,'r')
+        triage.assert_not_called();llm.assert_not_called()
+        db=connect(self.root,load_sources());self.addCleanup(db.close)
+        self.assertEqual(web_status(db,job['job_id'])['quality'][0]['filtered'],1)
+
+    def test_triage_reject_does_not_extract_or_create_findings(self):
+        response={'results':[{'url':'https://example.org/a','content':BODY}]}
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.triage_api',return_value=({'decision':'reject','reason':'Generic directory'},{})),patch('partner_monitor.media_selection.extract_api') as extract,patch('partner_monitor.web_media.analyze_api') as llm:
+            job=run_web(self.root,'r')
+        self.assertEqual(job['findings'],0);extract.assert_not_called();llm.assert_not_called()
+
+    def test_selected_article_extracts_only_short_name_context(self):
+        response={'results':[{'url':'https://example.org/a','title':'Example Ltd investigation','content':BODY}]}
+        raw='Unrelated background.\n'*200+'\n'+BODY+'\nA related continuation.\n'+'Other material.\n'*200
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.extract_api',return_value={'results':[{'url':'https://example.org/a','raw_content':raw}]}),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
+            job=run_web(self.root,'r')
+        sent=llm.call_args.args[1]['content']
+        self.assertIn(BODY,sent);self.assertLess(len(sent),5000);self.assertNotEqual(sent,raw)
+        self.assertEqual(job['findings'],1)
+
+    def test_uncertain_triage_is_partial_without_extraction(self):
+        response={'results':[{'url':'https://example.org/a','content':BODY}]}
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.triage_api',return_value=({'decision':'uncertain','reason':'Ambiguous name'},{})),patch('partner_monitor.media_selection.extract_api') as extract:
+            job=run_web(self.root,'r')
+        self.assertEqual(job['status'],'PARTIAL');extract.assert_not_called()
 
     def test_resume_pins_model_and_does_not_repeat_successful_searches(self):
-        response={'results':[{'url':'https://example.org/story','raw_content':BODY}]}
+        response={'results':[{'url':'https://example.org/story','content':BODY,'raw_content':BODY}]}
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response):
             job=run_web(self.root,'r',mode='search')
         with redirect_stdout(io.StringIO()),patch.dict(os.environ,{'OPENROUTER_MODEL':'changed/model'}),patch('partner_monitor.web_media.search_api',side_effect=AssertionError('No repeated search')),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
@@ -112,16 +146,17 @@ class WebMediaTests(unittest.TestCase):
 
     def test_pipeline_drains_pending_articles_and_exports(self):
         from partner_monitor.workflow import run_workflow
-        results=[{'url':'https://example.org/'+str(i),'raw_content':BODY+' Article '+str(i)} for i in range(12)]
+        results=[{'url':'https://example.org/'+str(i),'content':BODY,'raw_content':BODY+' Article '+str(i)} for i in range(12)]
         responses=[{'results':results[i:i+5]} for i in range(0,12,5)]
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=responses),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
             job=run_workflow(self.root,self.root/'report.html',run_id='r')
-        self.assertEqual(job['status'],'COMPLETED');self.assertEqual(llm.call_count,12)
+        self.assertEqual(job['status'],'PARTIAL');self.assertEqual(llm.call_count,5)
         self.assertTrue((self.root/'report.csv').exists())
         self.assertIn('Registration number matches',(self.root/'report.html').read_text(encoding='utf-8'))
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=AssertionError('No network')),patch('partner_monitor.web_media.analyze_api',side_effect=AssertionError('No network')):
             resumed=run_workflow(self.root,self.root/'report.html',job_id=job['job_id'])
-        self.assertEqual(resumed['web']['findings'],12)
+        self.assertEqual(resumed['web']['findings'],5)
+        self.assertEqual(resumed['web']['quality'][0]['budget_limited'],7)
 
     def test_pipeline_partial_still_exports_and_search_failure_is_visible(self):
         from partner_monitor.workflow import run_workflow
@@ -143,7 +178,7 @@ class WebMediaTests(unittest.TestCase):
         api.assert_not_called()
 
     def test_invalid_model_evidence_is_saved_but_not_published(self):
-        response={'results':[{'url':'https://example.org/story','raw_content':BODY}]}
+        response={'results':[{'url':'https://example.org/story','content':BODY,'raw_content':BODY}]}
         invalid=result();invalid['findings'][0]['evidence_quote']='Invented evidence unsupported by the article.'
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.web_media.analyze_api',return_value=(invalid,{'response':invalid})):
             job=run_web(self.root,'r')
@@ -157,7 +192,7 @@ class WebMediaTests(unittest.TestCase):
         with patch('partner_monitor.web_media.post_json',return_value={'results':[]}) as post:
             search_api('company','placeholder',5)
         self.assertEqual(post.call_args.args[0],'https://api.tavily.com/search')
-        self.assertTrue(post.call_args.args[2]['include_raw_content'])
+        self.assertFalse(post.call_args.args[2]['include_raw_content'])
         with patch('partner_monitor.web_media.post_json',return_value={'choices':[{'finish_reason':'stop','message':{'content':json.dumps(result())}}]}) as post:
             output,audit=analyze_api({'name':'Example'},{'content':BODY},'placeholder','fixture/model')
         self.assertEqual(output,result())
@@ -173,4 +208,5 @@ class WebMediaTests(unittest.TestCase):
         self.assertTrue(any('Old Name' in q for q in queries))
         self.assertTrue(any('Older Name' in q for q in queries))
         self.assertTrue(any('"New Name"' in q for q in queries))
-        self.assertLessEqual(len(queries),5)
+        self.assertLessEqual(len(queries),6)
+        self.assertTrue(all(REG not in query for query in queries))

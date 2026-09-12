@@ -49,6 +49,8 @@ class WebLoggingTests(unittest.TestCase):
         self.assertTrue((resumed.folder/'000001.html').exists())
         rebuilt=export_log(self.root,'job',self.root/'rebuilt')
         self.assertIn('PASS_FINISHED',rebuilt.read_text(encoding='utf-8'))
+        self.assertTrue((rebuilt.parent/'tavily.html').exists())
+        self.assertTrue((rebuilt.parent/'model.html').exists())
 
     def test_transport_error_is_logged_without_exception_secret(self):
         import requests

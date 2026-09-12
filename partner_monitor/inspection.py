@@ -91,6 +91,16 @@ def company(db,run_id,registration_number):
                 analysis=json.loads(article.pop('result_json') or '{}')
                 article['identity']=analysis.get('identity')
                 article['identity_reason']=analysis.get('identity_reason')
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_article_review'").fetchone():
+                from .media_selection import quality_rows
+                result['web_quality']=[r for r in quality_rows(db,job[0]) if r['registration_number']==registration_number]
+                result['web_selection']=[dict(r) for r in db.execute('SELECT a.url,r.filter_reason,r.snippet,r.triage_json,r.excerpt_limited,r.duplicate_of FROM web_article_review r JOIN web_articles a USING(job_id,registration_number,article_id) WHERE r.job_id=? AND r.registration_number=?',(job[0],registration_number))]
+                for selected in result['web_selection']:
+                    triage=json.loads(selected.pop('triage_json') or '{}')
+                    selected['triage_decision']=triage.get('decision')
+                    selected['triage_reason']=triage.get('reason')
+                if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_event_links'").fetchone():
+                    result['web_event_links']=[dict(r) for r in db.execute('SELECT l.*,a.url AS first_source,b.url AS second_source FROM web_event_links l JOIN web_articles a ON a.job_id=l.job_id AND a.registration_number=l.registration_number AND a.article_id=l.first_article JOIN web_articles b ON b.job_id=l.job_id AND b.registration_number=l.registration_number AND b.article_id=l.second_article WHERE l.job_id=? AND l.registration_number=?',(job[0],registration_number))]
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='sanctions_screening'").fetchone():
         for name in ('sanctions_screening','sanctions_candidates'):
             result[name] = [dict(r) for r in db.execute(f'SELECT * FROM {name} WHERE run_id=? AND registration_number=?',(run_id,registration_number))]

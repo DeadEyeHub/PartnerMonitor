@@ -1,164 +1,148 @@
-# Media pipeline operation
+# Media pipeline version 3
 
-## What runs
+## Processing sequence
 
-`pipeline` orchestrates official data, Tavily search, OpenRouter extraction, SQLite
-persistence and the existing HTML/CSV report. It accepts exactly one starting point:
+1. Build up to six name-only queries. Current and up to two historical names are
+   interleaved across the separate Latvian topics `tiesa`, `kartelis` and
+   `maksātnespēja`. The six-query bound can omit later topics when multiple names
+   exist. Registration numbers are never search terms. Diacritics and legal prefixes
+   are normalized for name matching; quoted trading names are used where available.
+2. Tavily Search requests five results per query with `include_raw_content=false`.
+   Save the original response and retain unique canonical URLs. A result without
+   the company name in its title or snippet becomes FILTERED, with a stored reason.
+   This lexical filter can miss abbreviations, spelling variants and indirect mentions.
+3. Send a title, URL, company names and at most 1,200 snippet characters to the model.
+   Strict triage output is inspect/reject/uncertain plus an English reason. No
+   findings can be generated from this step. Uncertain results stay PARTIAL.
+4. Only an inspect result permits full-text retrieval through Tavily Extract. No
+   requests are made directly to arbitrary article hosts. A returned URL must match
+   the requested canonical URL. Missing text is LIMITED_CONTENT, never no risk.
+5. Select original lines containing a company name and neighboring lines. Remove
+   obvious navigation/link lists and repeated lines. Retain at most 5,000 characters.
+   If a suitable company-centered excerpt cannot be selected, do not analyze it.
+   Raw responses remain available as evidence snapshots and in provider HTML logs;
+   they are not forwarded wholesale to the model.
+6. Validate the detailed structured model output against the submitted excerpt.
+   Exact quotes, supported categories, valid dates and matched identity are required.
+   Findings remain NEEDS_REVIEW. Selected/truncated context is EXCERPT_REVIEW and
+   keeps coverage PARTIAL, even if findings were extracted successfully.
+7. Skip detailed re-analysis of exact normalized excerpt copies, retaining a link
+   to their original article. A duplicate does not fill coverage if the original is
+   incomplete or failed. Existing exact-evidence event grouping remains available.
+   Additionally, same-company/type/status findings with compatible dates and at least
+   five overlapping summary terms (Jaccard >= 0.25) get candidate event links. These
+   links require manual review, preserve all source findings, and do not merge events.
 
-- `--run RUN_ID`: reuse an existing official-data run without downloading its sources.
-- `--job JOB_ID`: resume the original web job and its company scope.
-- `--input /input/companies.csv`: collect official sources first, then process media.
-  Add `--replay RUN_ID` to replay saved official snapshots instead of downloading them.
-  Replay applies to official data only; a new media job still calls the providers.
-
-Credentials are checked before collection. A partial official run can still be
-enriched, but the combined pipeline status remains PARTIAL. The official run's stored
-status is never overwritten by media processing. Scoring is still NOT_ASSESSED.
-
-## Preview and run
-
-Run these commands from the repository directory:
+## Commands and scope
 
 ```sh
 docker compose build collector
-docker compose run --rm collector web --run RUN_ID --limit 3 --dry-run
-docker compose run --rm collector pipeline --run RUN_ID --limit 3
+docker compose run --rm collector web --run RUN_ID --limit 2 --dry-run
+docker compose run --rm collector pipeline --run RUN_ID --limit 2
 docker compose run --rm collector web-status --job JOB_ID
 docker compose run --rm collector pipeline --job JOB_ID
 ```
 
-The dry run reads SQLite and lists company identities, search queries, destinations,
-request bounds and whether credentials are configured. It does not write to the
-database, contact providers, or display keys. It does not verify key validity, credit
-balance, model availability or structured-output support.
+`pipeline` accepts exactly one of `--run`, `--job`, or `--input`. `--input --replay`
+reuses official snapshots but starts a fresh media job. `--limit` applies only to new
+jobs, selecting root companies in registration-number order. Resuming a job retains
+its original company scope. Related companies are not automatically searched.
 
-After verifying a small job, `--limit 25` creates a new job covering up to 25 root
-companies, in registration-number order. Previously checked companies will be searched
-again in a new job; use `--job` to resume instead. Related companies are not part of
-this media scope. Reports contain all official-run companies, including unchecked ones.
+`web --mode search` and `web --mode analyze --job JOB_ID` remain separate entry points.
+Analyze mode now needs both keys because selected snippets can require Tavily Extract.
+`--dry-run` makes no provider requests or database writes; it previews queries, data
+transfers, credential presence and limits. It does not validate provider access.
 
-The job ID is printed before the first provider request. An interrupted process can
-therefore be resumed using saved progress. Its database status stays RUNNING if the
-process was killed; inspect it with `web-status` and resume explicitly. Concurrent
-execution of the same job is not supported. Resuming uses the job's original requested
-model. A changed pipeline/prompt version requires a new job.
+Version-2 jobs and official-data history remain readable. A changed prompt/pipeline
+version cannot resume an old media job. Start a new job for version 3. The original
+requested model and limit values are pinned in job configuration.
 
-## Search and extraction
+## Budgets and retries
 
-1. Build at most five queries: registration number with Latvian adverse keywords,
-   current name with Latvian and English keywords, and up to two historical names
-   with Latvian keywords. Use a quoted trading name when present in the legal name.
-   Full official names remain in the identity context.
-2. Tavily returns up to five results per query with raw text requested. Save its
-   response as a SHA-256-addressed JSON object under `raw/web`.
-3. Validate public HTTP(S) URLs, remove tracking parameters and deduplicate URLs and
-   identical text. Upgrade snippet-only records when full text becomes available.
-   An identical snippet must not suppress its full-text replacement.
-4. Send raw article text and company identity to OpenRouter using a strict JSON
-   schema. Snippets are not analyzed. Text longer than 18,000 characters is explicitly
-   marked truncated and retains PARTIAL coverage.
-5. Validate the model result locally. Findings require matched identity and an exact
-   evidence quote in the submitted text. Validate categories, dates and confidence.
-   Store invalid model responses for inspection, but publish no unsupported finding.
-6. Save valid findings as NEEDS_REVIEW. Keep allegations, investigations, reported
-   decisions and resolved matters distinct. The LLM does not assign a reliability score.
+Defaults per company/job:
 
-Tavily receives company names and registration numbers in queries. OpenRouter receives
-the current name, number, address, up to two historical names, and article URL, title,
-publication date and text. Owner records and VID PDFs are not submitted. Keys come from
-the ignored `.env`; authorization headers and provider error bodies are not persisted.
-Requests can incur provider charges.
+| Bound | Default |
+|---|---:|
+| Successfully triaged articles | 10 |
+| Prepared evidence articles | 5 |
+| Tavily extraction HTTP attempts | 5 |
+| Model HTTP attempts, including retries | 20 |
+| Cumulative serialized model-input characters | 60,000 |
+| Stop threshold for reported tokens | 40,000 |
+| Snippet characters per triage | 1,200 |
+| Excerpt characters per detailed analysis | 5,000 |
 
-## Bounds, errors and resuming
+Lower bounds can be configured through the commented `WEB_MAX_*` settings in
+`.env.example`. They are read before collecting new official data. Invalid values
+fail before provider calls. Resuming cannot reset the budget by changing `.env`.
 
-`web` attempts at most ten articles per company per invocation. `pipeline` runs up to
-three analysis passes by default (`--analysis-passes 1..3`), allowing the maximum 25
-search results per company to be processed. Automatic continuation processes only
-remaining PENDING articles, without retrying previous errors. Explicit resume retries
-failed queries and article analyses and reuses successful work. Pending articles have
-priority over failed ones. Transient transport errors get up to three attempts per
-request; these are not an exact monetary spending cap.
+Each actual model/extract HTTP attempt reserves budget in SQLite before transport.
+Failures and process interruptions retain their reservations. Transient HTTP/network
+errors may retry up to three times, subject to the remaining budget. Returned token
+usage and cost are stored per response. Missing usage is not a confirmed zero charge.
+The token threshold is checked before subsequent calls; an in-flight response can
+overshoot it. Character/request bounds apply independently. No exact currency cap is
+claimed, and reported cost does not include Tavily fees unless separately provided.
 
-Errors are persisted per query/article as safe local codes, including HTTP status
-codes when available. `web-status` lists company checks, article status counts, error
-counts, model configuration and total findings without issuing provider requests.
+`pipeline` can run up to three processing passes to drain remaining PENDING rows.
+Automatic continuation does not retry errors. Explicit resume can retry ERROR rows
+within the original budget; BUDGET_LIMIT rows remain visible and are not retried.
+Concurrent execution of the same job is unsupported. Unexpected errors leave the
+job resumable; ordinary provider errors are recorded and the report still exports.
 
-- COMPLETED: the selected job scope finished its tracked checks.
-- SEARCHED: search-only mode finished; analysis is pending.
-- PARTIAL: failed search/analysis, pending articles, truncated text, snippets or
-  uncertain identity remain. Search-only mode also returns PARTIAL on search failure.
-- NO_RESULTS (company analysis status): a successfully completed bounded search
-  returned no articles. Failed search never receives this status.
+## Reporting and audit
 
-HTML and CSV are exported even for ordinary persisted provider errors. The CLI exits
-with code 2 for PARTIAL and 1 for configuration or unexpected execution errors.
-Unexpected storage/report failures still fail the command; successful provider work
-already committed to SQLite remains available for resume.
+The main HTML report includes `web_quality`, `web_selection`, findings and candidate
+`web_event_links`. Quality distinguishes total retrieved result occurrences, retained
+URLs, name candidates, filters, triage, available excerpts, analyzed articles,
+duplicates, budget-limited rows, model requests, input characters and reported usage.
+Selection shows the stored snippet and the code/model selection reasons.
 
-## Outputs and remaining scope
+FILTERED/TRIAGE_REJECTED mean the bounded selection method rejected a result; they
+are not proof that a company has no adverse history. COMPLETED describes execution
+within the stated selection scope. Missing company names or failed queries cannot
+produce NO_RESULTS. Uncertain identity, excerpt-only context, unavailable text and
+budget gaps retain PARTIAL. Official collection status is never overwritten.
 
-### Live execution logs
+The live event journal is `raw/web_logs/JOB_ID.jsonl` in the data volume. Its HTML
+index is `REPORT_DIR/web-logs/JOB_ID/index.html`; refresh during execution. Every
+completed pass/report also creates `tavily.html` and `model.html` in that folder,
+containing complete request/response pairs without the event timeline. Tavily output
+separates search and extract; model output separates triage and evidence analysis.
+The main report links to the journal, and the journal links to these two files.
 
-Every `web` and `pipeline` invocation appends to the job's durable event journal:
-`/data/raw/web_logs/JOB_ID.jsonl`. Events are flushed to disk before transport starts
-and after each response. Resume appends events instead of replacing the earlier log.
-An interrupted final JSONL line is ignored when reading; earlier complete events remain.
+Logs preserve prompts, snippets, selected text, provider responses, retries, timing,
+validation outcomes, extraction decisions and configured limits. Secrets and sensitive
+structured fields are masked. Headers, cookies and raw HTTP error bodies are not
+recorded. HTML escapes all source/provider text. Full returned reasoning fields may
+be present, including encrypted provider metadata; internal model execution is not
+observable. Runtime evidence and reports are ignored by Git.
 
-The HTML log is updated after every event at
-`REPORT_DIR/web-logs/JOB_ID/index.html` (normally `data/reports/web-logs` on the host).
-Refresh the index during execution. Event numbers open separate HTML detail pages in
-the same folder, keeping the timeline small even when article text is large. Copy the
-whole job folder when sharing a log. `pipeline --output` places the log alongside that
-report. The main HTML report links to available job logs and rebuilds them from JSONL.
+Compact CSV retains the task's eight Overview fields. Risk scores and new-finding
+counts remain unimplemented and blank; risk class remains NOT_ASSESSED. The final
+risk engine, finding-change tracking and six-sheet workbook are separate stages.
 
-The journal records:
+## Version-3 live validation
 
-- UTC time, company, job, stage, mode, requested model and prompt version;
-- exact application request bodies, including queries, prompts and article text;
-- every HTTP attempt, status, duration, network error and retry delay;
-- successful provider responses, including actual model, finish reason, usage,
-  token counts and cost fields when supplied by the provider;
-- parsing and evidence-validation outcomes, validation reasons, snapshot paths;
-- duplicate decisions, snippet upgrades, reused searches and final article statuses;
-- company/pass completion and caught interruptions.
+Job `f8edfeb545e24a39964cad6ded254759` tested the same two companies after the user
+approved the new selection method. Nine name-only search queries returned 45 results,
+with 30 distinct retained URLs. Code filtered out 15; the model triaged 15 snippets.
+Five publications proceeded to extraction and detailed analysis, producing six
+NEEDS_REVIEW findings for SKONTO BŪVE. Seven snippets for Ogres būvmateriālu centrs
+were rejected by triage; no detailed analysis was performed for that company.
 
-Token usage and cost are provider-reported values, not a separately verified billing
-total. Non-streaming requests reveal the sent input and returned output, not internal
-model execution or token-by-token progress. A force-killed process may leave a request
-without a response event, which remains visible in the timeline.
+There were no API errors. Two SKONTO articles were left at the evidence-article limit;
+all five detailed analyses used selected context, so the combined job remains PARTIAL.
+The findings describe reported historical events, not verified current legal status.
 
-Authorization headers, cookies and raw HTTP error bodies are not collected. Sensitive
-structured fields and configured secret values are masked before writing journals,
-HTML and new provider snapshots. Exception messages from transport are not recorded.
-Article text and provider output are HTML-escaped, so scripts in source content cannot
-execute in a log page. Logs include the company context and article text and remain
-under ignored data directories; no credentials or runtime logs belong in Git.
+Provider-reported usage was 13,033 tokens and 0.0058327 USD across model responses,
+versus 44,933 tokens and 0.0129161 USD in the earlier test. This is about 71% fewer
+tokens, but the retrieved material and processing paths differ; it is not a controlled
+same-input benchmark. Tavily charges are excluded from this cost comparison.
 
-HTML includes job history, per-company queries and errors, article identity assessment
-and its reason, source URLs and quoted findings. Each company card uses its latest job
-for that official run; this can combine different job dates in one report. CSV retains
-the eight task Overview columns. Score and New findings remain blank; risk class is
-NOT_ASSESSED. Failed or incomplete media checks do not count toward web coverage.
+Official API contract: [Tavily Extract](https://docs.tavily.com/documentation/api-reference/endpoint/extract).
 
-This implementation does not add risk scoring, finding-level change tracking or the
-six-sheet Excel workbook. It does not establish legal clearance or exhaustive media
-coverage. Exact evidence grouping is implemented; semantic event deduplication remains
-a review task.
-
-## Validation record: 2026-09-12
-
-Offline provider fixtures exercise persistence, separate search/analysis, evidence
-validation, same-text snippet upgrades, pinned model resume, pending-article continuation,
-partial reports, read-only preview and credential preflight. Fixtures use temporary
-databases and never populate the production report.
-
-The production database dry run confirmed both keys are configured, without exposing
-them. A live provider request was blocked by the environment's automatic approval
-review pending explicit authorization of the data transfer. No successful live search
-or model result is claimed by this validation record.
-
-
-### Live two-company validation
+## Historical version-2 validation
 
 Job `d8e0bc501d0146129d8b8c436f2fc1da` checked SKONTO BŪVE (40003248848)
 and Ogres būvmateriālu centrs (40003299115) on 2026-09-12 after explicit user

@@ -21,6 +21,8 @@ def run_workflow(data_dir, output, *, run_id=None, job_id=None, input_path=None,
             raise ValueError('Set '+name+' in .env')
     if not os.getenv('OPENROUTER_MODEL','openai/gpt-4.1-mini').strip():
         raise ValueError('Set OPENROUTER_MODEL in .env')
+    from .media_selection import configured_limits
+    configured_limits()
     collection_result = None
     if input_path:
         collection_result = collect(input_path,data_dir,replay_run=replay,

@@ -59,8 +59,11 @@ def summary(db,run_id):
     companies = [dict(r) for r in db.execute('''SELECT rc.registration_number,rc.role,rc.depth,
       r.name,r.type,r.terminated FROM run_companies rc LEFT JOIN registry r USING(run_id,registration_number)
       WHERE rc.run_id=? ORDER BY rc.role DESC,rc.registration_number''',(run_id,))]
-    return {'run':run,'sources':sources,'companies':companies,
-            'note':'LOADED sanctions means list imported, not that company/person screening was performed.'}
+    screening=[]
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='sanctions_screening'").fetchone():
+        screening=[dict(r) for r in db.execute('SELECT * FROM sanctions_screening WHERE run_id=?',(run_id,))]
+    return {'run':run,'sources':sources,'companies':companies,'sanctions_screening':screening,
+            'note':'LOADED means list imported. Screening results, coverage limits and review candidates are reported separately; no legal clearance is implied.'}
 
 
 def company(db,run_id,registration_number):
@@ -76,6 +79,9 @@ def company(db,run_id,registration_number):
         result[view] = [dict(r) for r in db.execute(f'SELECT * FROM {quote(view)} WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
     result['financial_metrics'] = [dict(r) for r in db.execute('SELECT * FROM financial_metrics WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
     result['tax_debt'] = [dict(r) for r in db.execute('SELECT * FROM tax_debt WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='sanctions_screening'").fetchone():
+        for name in ('sanctions_screening','sanctions_candidates'):
+            result[name] = [dict(r) for r in db.execute(f'SELECT * FROM {name} WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
     return result
 
 
@@ -133,8 +139,10 @@ def report(db,run_id,path):
       '<style>body{font:15px system-ui;margin:32px;background:#f5f7fa;color:#172435}h1,h2{color:#133b55}table{border-collapse:collapse;background:white;width:100%}td,th{padding:9px;border:1px solid #dce3ea;text-align:left;vertical-align:top}th{background:#e8eff6}details{margin:12px 0;padding:12px;background:white;border:1px solid #dce3ea}summary{cursor:pointer;font-weight:600}.scroll{overflow:auto}.muted{color:#596574}a{color:#075c9a}</style>',
       '<h1>Partner Monitor — Official Data</h1>',
       '<p>Run '+esc(run_id)+' · '+esc(data['run']['started_at'])+' · '+esc(data['run']['status'])+'</p>',
-      '<p>This report shows imported facts. Risk scoring and sanctions matching have not been performed. NO_RECORDS does not mean no risk. LOADED means the sanctions list was imported. Official names and source text are preserved in their original language.</p>',
-      '<h2>Sources and Data Quality</h2>',table(data['sources']),'<h2>Companies</h2>',table(data['companies'])]
+      '<p>This report shows imported facts and, where available, sanctions name-screening candidates. Candidates require identity and legal review; no candidates does not mean no sanctions risk. LOADED means only that a list was imported. See Sanctions screening for coverage and date limitations. Historical runs without screening records were not screened. Official source text is preserved.</p>',
+      '<h2>Sources and Data Quality</h2>',table(data['sources']),
+      '<h2>Sanctions Screening</h2>',table(data['sanctions_screening']) if data['sanctions_screening'] else '<p>NOT_PERFORMED: this run has no screening results.</p>',
+      '<h2>Companies</h2>',table(data['companies'])]
     for row in data['companies']:
         reg = row['registration_number']
         item = company(db,run_id,reg)

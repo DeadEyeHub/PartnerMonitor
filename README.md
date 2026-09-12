@@ -2,7 +2,7 @@
 
 Collect official data about Latvian companies in SQLite. The first stage covers
 fact ingestion, run history, source quality checks, and result inspection.
-LLM analysis, the final risk engine, and sanctions matching are planned for later stages.
+Sanctions name screening is implemented as review candidates. LLM analysis and the final risk engine remain later stages.
 
 ## Run and inspect
 
@@ -43,7 +43,7 @@ Do not include credentials in URLs or command arguments.
 ## Sources and tables
 
 Actual URLs, CSV headers, and keys were checked on 2026-09-12 and recorded in
-`config/sources.json`. There are 21 file sources plus a separate tax debt evidence import.
+`config/sources.json`. There are 22 file sources plus a separate tax debt evidence import.
 
 | Source | Tables |
 |---|---|
@@ -54,7 +54,7 @@ Actual URLs, CSV headers, and keys were checked on 2026-09-12 and recorded in
 | UR: sanctions-related information | `ur_sanctions` |
 | UR: financial statements | `financial_statements`, `balance_sheets`, `income_statements`, `cash_flow_statements`, `financial_metrics` |
 | VID | `vat_status`, `vid_suspensions`, `vid_ratings`, `tax_payments`, `tax_debt` |
-| FID: EU and Latvian lists | `sanction_entities`, `sanction_names`, `sanction_identifiers`, `sanction_attributes` |
+| FID: EU, Latvian and UN lists | `sanction_entities`, `sanction_names`, `sanction_identifiers`, `sanction_attributes` |
 
 Official catalogs: [UR](https://data.gov.lv/dati/dataset/uz),
 [financial statements](https://data.gov.lv/dati/dataset/gada-parskatu-finansu-dati),
@@ -120,14 +120,58 @@ Run statuses: COMPLETED/PARTIAL/FAILED. Source statuses: COMPLETED/ERROR/MANUAL_
 Company source statuses: FOUND/NO_RECORDS/ERROR/NOT_CHECKED/LOADED.
 NO_RECORDS only means no matching row in a successfully processed file. Missing
 beneficial owners or financial statements do not imply high risk. LOADED for sanctions
-means a list was imported; company and person matching has not been performed.
+means a list was imported; screening outcomes are stored separately in `sanctions_screening` and `sanctions_candidates`.
 
 Retrieval time, HTTP Last-Modified, and dates within sources are stored separately.
-FID XML dates older than seven days produce a warning. This is an operational
-attention threshold, not proof that a newer list exists. On 2026-09-12 the EU XML
-was dated 2026-08-05 and the Latvian XML was dated 2018-03-29. These files must not
-be presented as a verified current, comprehensive sanctions check. FID lists cover
-targeted financial sanctions; other restrictions are outside this stage.
+FID XML dates older than seven days, missing dates and future dates produce explicit
+warnings and make the run PARTIAL. Age is an operational review threshold, not proof
+that a newer list exists. A recent successful download does not reset the XML date.
+All three FID lists are downloaded through the website's POST form with a temporary
+CSRF token; tokens are not persisted. The previous collector already used POST;
+a diagnostic GET failure did not represent a collector failure.
+
+### Sanctions screening
+
+Each run screens imported company names, historical names, owners, shareholders,
+beneficial owners and officers against EU/LV/UN names and aliases. Related companies
+are screened in their own rows. Rules normalize case, diacritics and punctuation,
+compare reordered name tokens, and propose similar names at a 0.92 string-similarity
+threshold when there is a shared token. Scores are string similarity, not a probability
+of identity. Names shorter than four characters are not matched automatically.
+
+Every candidate retains the UR record key and snapshot, list entity ID and snapshot,
+matched alias, rule, score, legal reference and date-of-birth comparison where available.
+All candidates remain NEEDS_REVIEW, including exact names or conflicting birth dates.
+No automatic sanction designation, identity clearance, indirect ownership/control
+attribution, cross-script transliteration or sectoral-sanctions evaluation is performed.
+Corporate legal forms are not stripped. Identifier-only matching is not implemented.
+These limitations must be considered when interpreting an absence of candidates.
+
+Company screening states:
+- CANDIDATES_REQUIRE_REVIEW: inspect candidates and the coverage limitations.
+- INCOMPLETE: no candidates, but a required source/company name is absent or dates require review.
+- NO_CANDIDATES: no candidates under these rules and no tracked source/date gaps; not legal clearance.
+- Historical runs with no screening rows are shown as NOT_PERFORMED.
+
+```sh
+docker compose build collector
+docker compose run --rm collector collect --input /input/companies.demo.csv --replay RUN_ID --refresh-sanctions
+docker compose run --rm collector report
+```
+
+This refresh downloads EU/LV/UN while retaining the other snapshots and verified VID
+PDFs from the replayed run. A plain replay remains offline. Candidate results and
+source-date warnings appear in the HTML report and company inspection command.
+
+The 2026-09-12 source audit found EU generationDate 2026-08-05 (6,234 entities),
+LV PublishDate 2018-03-29 (3 entities), and UN dateGenerated 2026-09-04 (736 people,
+275 entities). [The UN official page](https://main.un.org/securitycouncil/en/content/un-sc-consolidated-list)
+reports the same update date and counts; this is metadata corroboration, not a byte-level
+comparison. Direct programmatic access to that page returned HTTP 202 with an empty
+body in this environment. [The EU primary service](https://webgate.ec.europa.eu/fsd/fsf)
+returned HTTP 401 without authentication. EU and LV currentness is therefore not
+independently verified. FID lists cover targeted financial sanctions; the report does
+not cover all possible trade/service restrictions or OFAC/UK lists.
 
 ### VID tax debt
 

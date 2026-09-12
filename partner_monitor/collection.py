@@ -13,7 +13,7 @@ from .sources import load_sources
 from .ur import utc_now
 
 
-def collect(input_path, data_dir, selected=None, replay_run=None, ownership_depth=2, debt_file=None, refresh_debt=False):
+def collect(input_path, data_dir, selected=None, replay_run=None, ownership_depth=2, debt_file=None, refresh_debt=False, refresh_sanctions=False):
     companies = read_companies(input_path)
     all_sources = load_sources()
     if selected and set(selected) & {'ur_balance','ur_income','ur_cashflow'}:
@@ -28,7 +28,8 @@ def collect(input_path, data_dir, selected=None, replay_run=None, ownership_dept
             raise ValueError('Invalid replay run ID')
         replay_manifest = json.loads((data_dir/'raw'/'runs'/(replay_run+'.json')).read_text(encoding='utf-8'))
         definitions = {s['id']:s for s in replay_manifest['definitions']}
-        sources = [definitions[s['id']] for s in sources if s['id'] in definitions]
+        sources = [s if refresh_sanctions and s['id'].startswith('fid_') else definitions[s['id']]
+                   for s in sources if s['id'] in definitions or refresh_sanctions and s['id'].startswith('fid_')]
     run_id = uuid.uuid4().hex
     db = connect(data_dir,all_sources)
     manifest = {'run_id':run_id,'input':companies,'definitions':sources,'sources':{},'ownership_depth':ownership_depth,
@@ -42,7 +43,7 @@ def collect(input_path, data_dir, selected=None, replay_run=None, ownership_dept
     snapshots,snapshot_ids = {},{}
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            tasks = {pool.submit(replay,s,data_dir,replay_manifest['sources']) if replay_manifest else pool.submit(download,s,data_dir):s for s in sources}
+            tasks = {pool.submit(replay,s,data_dir,replay_manifest['sources']) if replay_manifest and not (refresh_sanctions and s['id'].startswith('fid_')) else pool.submit(download,s,data_dir):s for s in sources}
             for task in concurrent.futures.as_completed(tasks):
                 s = tasks[task]
                 try:
@@ -92,6 +93,8 @@ def collect(input_path, data_dir, selected=None, replay_run=None, ownership_dept
                         detail = None
                     else:
                         scanned,as_of,detail = import_xml(db,run_id,s,snapshot_ids[s['id']],data_dir/meta['path'])
+                        if detail:
+                            manifest['warnings'].append(s['id']+': '+detail)
                         counts = {}
                     if as_of:
                         meta['source_as_of'] = as_of
@@ -131,6 +134,15 @@ def collect(input_path, data_dir, selected=None, replay_run=None, ownership_dept
             debt_meta = db.execute("SELECT metadata_json FROM source_snapshots WHERE run_id=? AND source='vid_debt'",(run_id,)).fetchone()
             if debt_meta:
                 manifest['sources']['vid_debt'] = json.loads(debt_meta[0])
+        if any(s['id'].startswith('fid_') for s in sources):
+            from .screening import screen
+            with db:
+                screening = screen(db,run_id)
+            manifest['sanctions_screening'] = screening
+            if screening['missing_sources']:
+                manifest['warnings'].append('SANCTIONS_SCREENING_INPUTS_MISSING')
+            if screening['candidates']:
+                manifest['warnings'].append('SANCTIONS_CANDIDATES_REQUIRE_REVIEW')
         remaining = db.execute("SELECT COUNT(*) FROM source_checks WHERE run_id=? AND status!='COMPLETED'",(run_id,)).fetchone()[0]
         status = 'PARTIAL' if remaining or manifest['warnings'] else 'COMPLETED'
         with db:

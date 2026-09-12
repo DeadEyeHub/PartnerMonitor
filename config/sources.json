@@ -532,5 +532,12 @@
     "format": "xml",
     "url": "https://sankcijas.fid.gov.lv/lejupieladet-sarakstu/lv",
     "verified_on": "2026-09-12"
+  },
+  {
+    "id": "fid_un",
+    "filename": "un.xml",
+    "format": "xml",
+    "url": "https://sankcijas.fid.gov.lv/lejupieladet-sarakstu/un",
+    "verified_on": "2026-09-12"
   }
 ]

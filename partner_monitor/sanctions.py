@@ -17,6 +17,8 @@ def import_xml(db,run_id,source,snapshot_id,path):
     if b'<!DOCTYPE' in content.upper() or b'<!ENTITY' in content.upper():
         raise ValueError('XML DTD/entities are not accepted')
     root = ET.fromstring(content)
+    if source['id']=='fid_un':
+        return import_un(db,run_id,source,snapshot_id,root)
     is_eu = source['id']=='fid_eu'
     if tag(root) != ('export' if is_eu else 'LVlist'):
         raise ValueError('Unexpected sanctions XML schema')
@@ -54,11 +56,51 @@ def import_xml(db,run_id,source,snapshot_id,path):
         count += 1
     if not count:
         raise ValueError('Sanctions XML has no entities')
-    warning = None
+    return count,generation,date_warning(generation)
+
+
+def date_warning(generation):
+    warning = 'SOURCE_DATE_MISSING'
     if generation:
         published = datetime.fromisoformat(generation.replace('Z','+00:00'))
         if published.tzinfo is None:
             published = published.replace(tzinfo=timezone.utc)
-        if (datetime.now(timezone.utc)-published).days>7:
+        warning = None
+        if published > datetime.now(timezone.utc):
+            warning = 'SOURCE_DATE_IN_FUTURE'
+        elif (datetime.now(timezone.utc)-published).total_seconds()>7*86400:
             warning = 'SOURCE_DATE_OLDER_THAN_7_DAYS; date does not prove a newer list exists'
-    return count,generation,warning
+    return warning
+
+
+def import_un(db,run_id,source,snapshot_id,root):
+    if tag(root)!='CONSOLIDATED_LIST':
+        raise ValueError('Unexpected UN sanctions XML schema')
+    count=0
+    for group,kind in [('INDIVIDUALS','person'),('ENTITIES','enterprise')]:
+        container=root.find(group)
+        if container is None:
+            raise ValueError('UN list section missing')
+        for entity in container:
+            entity_id=entity.findtext('DATAID')
+            name=' '.join(entity.findtext(k,'').strip() for k in ['FIRST_NAME','SECOND_NAME','THIRD_NAME','FOURTH_NAME']).strip()
+            if not entity_id or not name:
+                raise ValueError('UN entity ID/name missing')
+            names={name}
+            names.update(e.text.strip() for e in entity.iter('ALIAS_NAME') if e.text and e.text.strip())
+            names.update(e.text.strip() for e in entity.iter('NAME_ORIGINAL_SCRIPT') if e.text and e.text.strip())
+            db.execute('INSERT INTO sanction_entities VALUES (?,?,?,?,?,?,?,?)',
+                (run_id,source['id'],entity_id,kind,entity.findtext('UN_LIST_TYPE'),
+                 'https://main.un.org/securitycouncil/en/content/un-sc-consolidated-list',ET.tostring(entity,encoding='unicode'),snapshot_id))
+            for name in sorted(names):
+                db.execute('INSERT INTO sanction_names VALUES (?,?,?,?,?)',(run_id,source['id'],entity_id,name,normalized_name(name)))
+            for index,child in enumerate(entity):
+                db.execute('INSERT INTO sanction_attributes VALUES (?,?,?,?,?,?)',
+                    (run_id,source['id'],entity_id,index,tag(child),json.dumps({'xml':ET.tostring(child,encoding='unicode')},ensure_ascii=False)))
+                if tag(child)=='INDIVIDUAL_DOCUMENT' and child.findtext('NUMBER'):
+                    db.execute('INSERT INTO sanction_identifiers VALUES (?,?,?,?,?,?,?)',
+                        (run_id,source['id'],entity_id,index,child.findtext('TYPE_OF_DOCUMENT'),child.findtext('NUMBER'),child.findtext('COUNTRY_OF_ISSUE')))
+            count+=1
+    if not count: raise ValueError('UN sanctions XML has no entities')
+    generated=root.get('dateGenerated')
+    return count,generated,date_warning(generated)

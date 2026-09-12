@@ -63,6 +63,20 @@ def connect(data_dir: Path, sources):
       snapshot_id TEXT REFERENCES source_snapshots, detail TEXT,
       PRIMARY KEY(run_id,registration_number));
     CREATE INDEX IF NOT EXISTS sanction_name_lookup ON sanction_names(normalized_name);
+    CREATE TABLE IF NOT EXISTS sanctions_screening (
+      run_id TEXT NOT NULL REFERENCES monitoring_runs, registration_number TEXT NOT NULL REFERENCES companies,
+      status TEXT NOT NULL, subjects_checked INTEGER NOT NULL, candidates INTEGER NOT NULL,
+      limitations TEXT NOT NULL, algorithm TEXT NOT NULL,
+      PRIMARY KEY(run_id,registration_number));
+    CREATE TABLE IF NOT EXISTS sanctions_candidates (
+      run_id TEXT NOT NULL REFERENCES monitoring_runs, registration_number TEXT NOT NULL REFERENCES companies,
+      subject_key TEXT NOT NULL, subject_name TEXT NOT NULL, subject_role TEXT NOT NULL,
+      source TEXT NOT NULL, entity_id TEXT NOT NULL, matched_name TEXT NOT NULL,
+      method TEXT NOT NULL, score TEXT NOT NULL, evidence_json TEXT NOT NULL,
+      review_status TEXT NOT NULL DEFAULT 'NEEDS_REVIEW',
+      PRIMARY KEY(run_id,registration_number,subject_key,source,entity_id),
+      FOREIGN KEY(run_id,source,entity_id) REFERENCES sanction_entities);
+    INSERT OR IGNORE INTO schema_versions VALUES (3, CURRENT_TIMESTAMP);
     CREATE VIEW IF NOT EXISTS v_source_status AS
       SELECT c.*, json_extract(s.metadata_json,'$.retrieved_at') retrieved_at,
         json_extract(s.metadata_json,'$.source_as_of') source_as_of,

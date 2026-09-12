@@ -20,6 +20,7 @@ def main():
     collect_parser.add_argument('--sources',help='Comma-separated source IDs; default: all')
     collect_parser.add_argument('--replay',help='Replay a full run without source downloads')
     collect_parser.add_argument('--refresh-debt',action='store_true',help='Query VID live while replaying other sources')
+    collect_parser.add_argument('--refresh-sanctions',action='store_true',help='Download current EU/LV/UN lists while replaying other sources')
     collect_parser.add_argument('--ownership-depth',type=int,choices=range(0,6),default=2)
     collect_parser.add_argument('--tax-debt-file',type=Path,default=os.getenv('TAX_DEBT_FILE') or None)
     collect_parser.add_argument('--snapshot',type=Path,help='Compatibility: replay the old register-only snapshot')
@@ -47,7 +48,7 @@ def main():
                 result = run(args.input,data_dir,os.getenv('UR_REGISTER_URL',''),args.snapshot)
             else:
                 result = collect(args.input,data_dir,args.sources.split(',') if args.sources else None,
-                                 args.replay,args.ownership_depth,args.tax_debt_file,args.refresh_debt)
+                                 args.replay,args.ownership_depth,args.tax_debt_file,args.refresh_debt,args.refresh_sanctions)
         else:
             db = open_database(data_dir)
             try:

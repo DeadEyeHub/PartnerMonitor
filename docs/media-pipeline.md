@@ -156,3 +156,27 @@ The production database dry run confirmed both keys are configured, without expo
 them. A live provider request was blocked by the environment's automatic approval
 review pending explicit authorization of the data transfer. No successful live search
 or model result is claimed by this validation record.
+
+
+### Live two-company validation
+
+Job `d8e0bc501d0146129d8b8c436f2fc1da` checked SKONTO BŪVE (40003248848)
+and Ogres būvmateriālu centrs (40003299115) on 2026-09-12 after explicit user
+approval. Eight Tavily queries completed, yielding 33 retained URLs: 23 snippets
+and 10 raw-text articles (some truncated). Search results included substantial
+unrelated material; potentially relevant SKONTO articles remained snippet-only.
+
+The first model requests returned HTTP 404 because `temperature` was not supported
+by the configured `openai/gpt-5.6-luna` endpoints with strict parameter routing.
+Removing the optional parameter fixed routing without changing the model or schema.
+Resume reused all Tavily results. All ten analyses then passed schema validation:
+nine identities were different and one uncertain, with no findings. This tests
+identity rejection, not successful extraction of a relevant adverse event.
+
+Provider-reported usage for the ten successful model responses was 43,160 input
+and 1,773 output tokens (44,933 total), with cost 0.0129161 USD. This excludes Tavily
+charges and is not a reconciled provider bill. Final job status remains PARTIAL due
+to snippet-only/truncated coverage and uncertain identity; final article API errors
+are empty. Earlier failures remain visible in the HTML event history. Both HTML and
+compact CSV were regenerated. Search relevance and retrieval of full article text
+need improvement before expanding the scope.

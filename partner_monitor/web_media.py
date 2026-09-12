@@ -156,7 +156,7 @@ def validate_analysis(result,content):
 
 
 def analyze_api(company,article,key,model):
-    request={'model':model,'temperature':0,'max_tokens':2500,
+    request={'model':model,'max_tokens':2500,
       'provider':{'require_parameters':True},
       'messages':[{'role':'system','content':PROMPT},{'role':'user','content':json.dumps({'company':company,'article':article},ensure_ascii=False)}],
       'response_format':{'type':'json_schema','json_schema':{'name':'adverse_media','strict':True,'schema':SCHEMA}}}

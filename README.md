@@ -259,8 +259,8 @@ and its data; removing a temporary container does not delete the data.
 
 Put `TAVILY_API_KEY` and `OPENROUTER_API_KEY` in the ignored `.env` file.
 `OPENROUTER_MODEL` defaults to `openai/gpt-4.1-mini`; choose a model that supports
-strict JSON-schema output. Keys are configured; live provider validation remains
-pending explicit authorization required by the environment's automatic approval review.
+strict JSON-schema output. Live Tavily/OpenRouter access was verified on two companies
+on 2026-09-12. See the operation guide for results and remaining search coverage gaps.
 API contracts: [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)
 and [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs).
 

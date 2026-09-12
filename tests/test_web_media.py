@@ -162,6 +162,7 @@ class WebMediaTests(unittest.TestCase):
             output,audit=analyze_api({'name':'Example'},{'content':BODY},'placeholder','fixture/model')
         self.assertEqual(output,result())
         self.assertEqual(post.call_args.args[2]['response_format']['type'],'json_schema')
+        self.assertNotIn('temperature',post.call_args.args[2])
         self.assertNotIn('Authorization',json.dumps(audit))
 
     def test_url_safety_and_historical_queries(self):

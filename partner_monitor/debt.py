@@ -1,50 +1,29 @@
-"""Explicit evidence import when VID's interactive session cannot be automated."""
+"""Import verified browser evidence or explicitly supplied VID evidence."""
 import csv
 import hashlib
 import json
-import re
 import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import requests
-
-from .downloads import write_json
 from .normalize import date_value, number
 from .ur import utc_now
 
 URL = 'https://www6.vid.gov.lv/NPAR'
 
 
-def access_probe(company):
-    try:
-        with requests.Session() as session:
-            response = session.get(URL,timeout=(10,30))
-            response.raise_for_status()
-            date = re.search(r'id="QueryDate"[^>]*value="([^"]+)',response.text)
-            if not date:
-                return 'FORM_CHANGED',None
-            check = session.get('https://www6.vid.gov.lv/ReqCode',params={'check':'true','pageName':'NPARJP'},timeout=(10,30))
-            check.raise_for_status()
-            if check.text.strip()=='true':
-                return 'HUMAN_VERIFICATION_REQUIRED',None
-            if check.text.strip()!='false':
-                return 'FORM_CHANGED',None
-            result = session.post(URL+'/Data',data={'IsPhysicalPerson':'false','IsLegalPerson':'true',
-                'Code':company['registration_number'],'Name':company.get('name',''),'Surname':'',
-                'QueryDate':date.group(1),'From':'0','submit':'yes'},timeout=(10,60))
-            result.raise_for_status()
-            if 'sesijas noilgums' in result.text:
-                return 'VID_SESSION_EXPIRED',result.content
-            if result.text.startswith('check_code'):
-                return 'HUMAN_VERIFICATION_REQUIRED',None
-            return 'MANUAL_RESULT_REVIEW_REQUIRED',result.content
-    except requests.RequestException:
-        return 'VID_UNAVAILABLE',None
-
-
-def import_debt(db,run_id,companies,data_dir,manual_file=None,probe=True):
+def import_debt(db,run_id,companies,data_dir,manual_file=None,probe=True,replay_metadata=None):
     rows = {}
+    browser_evidence = None
+    if replay_metadata and replay_metadata.get('origin')=='browser_evidence':
+        browser_evidence = replay_metadata.get('artifacts',[])
+    browser_error = None
+    if not manual_file and probe and companies:
+        from .debt_browser import collect_browser
+        try:
+            manual_file,browser_evidence = collect_browser(companies,data_dir)
+        except Exception as exc:
+            browser_error = 'BROWSER_UNAVAILABLE: '+type(exc).__name__
     detail,content = ('NO_MANUAL_EVIDENCE_PROVIDED',None)
     if manual_file:
         content = Path(manual_file).read_bytes()
@@ -74,9 +53,9 @@ def import_debt(db,run_id,companies,data_dir,manual_file=None,probe=True):
                     raise ValueError('Use a public VID evidence URL without credentials')
                 row.update(published_debt_amount=amount,publication_threshold=threshold)
                 rows[reg] = row
-        detail = 'MANUALLY_SUPPLIED_VID_EVIDENCE'
-    elif probe and companies:
-        detail,content = access_probe(companies[0])
+        detail = 'BROWSER_VERIFIED_VID_EVIDENCE' if browser_evidence is not None else 'MANUALLY_SUPPLIED_VID_EVIDENCE'
+    elif browser_error:
+        detail = browser_error
     snapshot_id = None
     if content:
         sha = hashlib.sha256(content).hexdigest()
@@ -86,16 +65,21 @@ def import_debt(db,run_id,companies,data_dir,manual_file=None,probe=True):
             path.write_bytes(content)
         meta = dict(source='vid_debt',download_url=URL,retrieved_at=utc_now(),source_as_of=None,
                     sha256=sha,size=len(content),path=path.relative_to(data_dir).as_posix(),
-                    origin='manual_evidence' if manual_file else 'access_probe')
+                    origin='browser_evidence' if browser_evidence is not None else 'manual_evidence',
+                    artifacts=browser_evidence or [])
         snapshot_id = uuid.uuid4().hex
         db.execute('INSERT INTO source_snapshots VALUES (?,?,?,?)',(snapshot_id,run_id,'vid_debt',json.dumps(meta)))
     for company in companies:
         reg = company['registration_number']
         row = rows.get(reg,{})
         status = row.get('query_status','NOT_CHECKED')
+        company_detail = detail
+        if browser_evidence is not None:
+            evidence = next((e for e in browser_evidence if e['registration_number']==reg),{})
+            company_detail = evidence.get('reason',detail)
         db.execute('INSERT INTO tax_debt VALUES (?,?,?,?,?,?,?,?,?,?)',(run_id,reg,row.get('effective_date'),
                    row.get('published_debt_amount'),row.get('publication_threshold','150'),status,utc_now(),
-                   row.get('evidence_url',URL),snapshot_id,detail))
+                   row.get('evidence_url',URL),snapshot_id,company_detail))
         db.execute('INSERT INTO company_source_checks VALUES (?,?,?,?,?)',
                    (run_id,reg,'vid_debt','FOUND' if row else 'NOT_CHECKED',int(bool(row))))
     imported = sum(c['registration_number'] in rows for c in companies)

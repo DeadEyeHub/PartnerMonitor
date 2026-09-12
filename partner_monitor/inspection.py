@@ -1,6 +1,7 @@
 import html
 import json
 import sqlite3
+import hashlib
 from pathlib import Path
 
 from .database import quote
@@ -103,6 +104,24 @@ def compare(db,current,previous):
 
 def report(db,run_id,path):
     data = summary(db,run_id)
+    evidence_links = {}
+    data_dir = Path(db.execute('PRAGMA database_list').fetchone()[2]).parent
+    for snapshot in db.execute("SELECT metadata_json FROM source_snapshots WHERE run_id=? AND source='vid_debt'",(run_id,)):
+        for artifact in json.loads(snapshot[0]).get('artifacts',[]):
+            if 'pdf' not in artifact:
+                continue
+            meta = artifact['pdf']
+            source_path = (data_dir/meta['path']).resolve()
+            if not source_path.is_relative_to(data_dir.resolve()):
+                raise ValueError('Invalid PDF evidence path')
+            content = source_path.read_bytes()
+            if hashlib.sha256(content).hexdigest() != meta['sha256']:
+                raise ValueError('PDF evidence hash mismatch')
+            relative = Path('evidence')/(meta['sha256']+'.pdf')
+            target = path.parent/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes(content)
+            evidence_links[artifact['registration_number']] = relative.as_posix()
     def esc(value):
         return html.escape('' if value is None else str(value),quote=True)
     def table(rows,exclude=()):
@@ -125,6 +144,8 @@ def report(db,run_id,path):
             if isinstance(records,list):
                 blocks.append('<details><summary>'+esc(display_label(name))+' · '+str(len(records))+'</summary>')
                 blocks.append(table(records,exclude={'run_id','raw_json','row_hash','record_key'}))
+                if name=='tax_debt' and reg in evidence_links:
+                    blocks.append('<p><a href="'+esc(evidence_links[reg])+'">Download official VID PDF</a></p>')
                 blocks.append('</details>')
         blocks.append('</details>')
     blocks.append('</html>')

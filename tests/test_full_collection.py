@@ -115,6 +115,39 @@ class FullCollectionTests(unittest.TestCase):
         row=db.execute('SELECT query_status,published_debt_amount FROM tax_debt').fetchone()
         self.assertEqual(tuple(row),('NOT_CHECKED',None))
 
+    def test_browser_evidence_import_replay_and_pdf_integrity(self):
+        from partner_monitor.debt_browser import save_object
+        db=self.seeded_db()
+        data=self.root/'db'
+        pdf=save_object(data,b'%PDF-fixture','.pdf')
+        evidence=[{'registration_number':REG,'pdf':pdf,'status':'NO_PUBLISHED_DEBT_ABOVE_THRESHOLD'}]
+        path=data/'debt.csv'
+        path.write_text('registration_number,effective_date,published_debt_amount,publication_threshold,query_status,evidence_url\n'
+                        +REG+',2026-09-09,,150,NO_PUBLISHED_DEBT_ABOVE_THRESHOLD,https://www6.vid.gov.lv/NPAR\n')
+        with patch('partner_monitor.debt_browser.collect_browser',return_value=(path,evidence)):
+            self.assertEqual(import_debt(db,'r',[{'registration_number':REG}],data),'COMPLETED')
+        meta=json.loads(db.execute("SELECT metadata_json FROM source_snapshots WHERE source='vid_debt'").fetchone()[0])
+        self.assertEqual(meta['origin'],'browser_evidence')
+        self.assertEqual(meta['artifacts'],evidence)
+        db.execute("INSERT INTO monitoring_runs VALUES ('replay','2026-09-12',NULL,'RUNNING',NULL)")
+        with patch('partner_monitor.debt_browser.collect_browser',side_effect=AssertionError('No browser in replay')):
+            import_debt(db,'replay',[{'registration_number':REG}],data,data/meta['path'],probe=False,replay_metadata=meta)
+        copied=json.loads(db.execute("SELECT metadata_json FROM source_snapshots WHERE run_id='replay'").fetchone()[0])
+        self.assertEqual(copied['artifacts'],evidence)
+        out=self.root/'report'/'latest.html'
+        report(db,'r',out)
+        self.assertEqual((out.parent/'evidence'/(pdf['sha256']+'.pdf')).read_bytes(),b'%PDF-fixture')
+        (data/pdf['path']).write_bytes(b'tampered')
+        with self.assertRaises(ValueError): report(db,'r',out)
+
+    def test_browser_failure_leaves_unknown_amount(self):
+        db=self.seeded_db()
+        with patch('partner_monitor.debt_browser.collect_browser',side_effect=RuntimeError('offline')):
+            import_debt(db,'r',[{'registration_number':REG}],self.root/'db')
+        row=db.execute('SELECT query_status,published_debt_amount,detail FROM tax_debt').fetchone()
+        self.assertEqual(tuple(row[:2]),('NOT_CHECKED',None))
+        self.assertIn('BROWSER_UNAVAILABLE',row[2])
+
     def test_replay_detects_tampering(self):
         path=self.root/'source.csv'
         path.write_text('tampered')

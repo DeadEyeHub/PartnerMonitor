@@ -1,5 +1,6 @@
 *
 !Dockerfile
+!requirements.txt
 !partner_monitor/
 !partner_monitor/*.py
 !config/

@@ -13,7 +13,7 @@ from .sources import load_sources
 from .ur import utc_now
 
 
-def collect(input_path, data_dir, selected=None, replay_run=None, ownership_depth=2, debt_file=None):
+def collect(input_path, data_dir, selected=None, replay_run=None, ownership_depth=2, debt_file=None, refresh_debt=False):
     companies = read_companies(input_path)
     all_sources = load_sources()
     if selected and set(selected) & {'ur_balance','ur_income','ur_cashflow'}:
@@ -116,11 +116,18 @@ def collect(input_path, data_dir, selected=None, replay_run=None, ownership_dept
             calculate_metrics(db,run_id)
         if not selected or 'vid_debt' in selected:
             replay_debt = replay_manifest['sources'].get('vid_debt') if replay_manifest else None
-            if not debt_file and replay_debt and replay_debt.get('origin')=='manual_evidence':
+            debt_replay_metadata = None
+            if not refresh_debt and not debt_file and replay_debt and replay_debt.get('origin') in {'manual_evidence','browser_evidence'}:
                 verified = replay({'id':'vid_debt'},data_dir,replay_manifest['sources'])
+                for artifact in verified.get('artifacts',[]):
+                    for kind in ('html','pdf'):
+                        if kind in artifact:
+                            replay({'id':kind},data_dir,{kind:artifact[kind]})
                 debt_file = data_dir/verified['path']
+                debt_replay_metadata = replay_debt
             with db:
-                import_debt(db,run_id,companies,data_dir,debt_file,probe=not bool(replay_run))
+                import_debt(db,run_id,companies,data_dir,debt_file,probe=not bool(replay_run) or refresh_debt,
+                            replay_metadata=debt_replay_metadata)
             debt_meta = db.execute("SELECT metadata_json FROM source_snapshots WHERE run_id=? AND source='vid_debt'",(run_id,)).fetchone()
             if debt_meta:
                 manifest['sources']['vid_debt'] = json.loads(debt_meta[0])

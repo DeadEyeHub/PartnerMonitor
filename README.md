@@ -132,9 +132,33 @@ targeted financial sanctions; other restrictions are outside this stage.
 ### VID tax debt
 
 [VID publishes debt exceeding EUR 150](https://www.vid.gov.lv/lv/nodoklu-paradnieki)
-through a separate interactive form. In the tested environment, the normal request
-returns a session expiration error. The collector probes access once per run,
-records the reason, and leaves amounts NULL with NOT_CHECKED. CAPTCHA is not bypassed.
+through a separate interactive form. The collector opens Chromium, selects a legal
+person, fills the company name, registration number and an available date, and
+submits the form. It saves the current HTML response and the official downloaded
+PDF as SHA-256-addressed objects. Both documents must agree on the company, date,
+status and amount before the result is imported. Unknown wording, missing PDFs,
+service errors and CAPTCHA leave the company NOT_CHECKED; CAPTCHA is not solved.
+
+The default date is the third completed working day before today in Europe/Riga,
+excluding weekends and Latvian public holidays. Before 07:00 it uses an additional
+working-day buffer. Set `VID_DEBT_QUERY_DATE=2026-09-09` in `.env` to request a
+specific historical date (ISO format). A date unavailable at VID is never treated
+as no debt. The Docker image includes Chromium and ChromeDriver; Chromium runs as
+the non-root monitor user, with Docker isolation and without its nested namespace
+sandbox because Docker's default seccomp blocks it. Local execution requires
+Chrome/Chromium and the Python requirements.
+
+To refresh debt while reusing a previous run's other source snapshots:
+
+```sh
+docker compose build collector
+docker compose run --rm collector collect --input /input/companies.demo.csv --replay RUN_ID --refresh-debt
+docker compose run --rm collector report
+```
+
+A plain replay makes no browser/network requests and verifies hashes of saved
+evidence, including HTML/PDF artifacts. Browser cookies stay in a temporary profile
+and are removed when the browser exits. No session credentials enter Git.
 
 For manually verified evidence, create a UTF-8 CSV with this header:
 
@@ -152,7 +176,7 @@ docker compose run --rm collector collect --input /input/companies.demo.csv --ta
 ```
 
 Alternatively, set `TAX_DEBT_FILE=/input/tax_debt.csv` in `.env`. Companies without
-evidence remain NOT_CHECKED. A full run without verified debt evidence is PARTIAL.
+evidence remain NOT_CHECKED. A run with any unverified company debt check is PARTIAL.
 The CLI returns exit code 2 for PARTIAL and exit code 1 for errors.
 
 ## Replay and comparison

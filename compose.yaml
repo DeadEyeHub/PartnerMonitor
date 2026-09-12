@@ -1,0 +1,25 @@
+services:
+  sqlite:
+    build:
+      context: .
+      target: sqlite
+    stdin_open: true
+    tty: true
+    volumes:
+      - monitoring-data:/data
+
+  collector:
+    build:
+      context: .
+      target: app
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      REPORT_DIR: /reports
+    volumes:
+      - monitoring-data:/data
+      - ./data/input:/input:ro
+      - ./data/reports:/reports
+
+volumes:
+  monitoring-data:

@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!partner_monitor/
+!partner_monitor/*.py
+!config/
+!config/*.json

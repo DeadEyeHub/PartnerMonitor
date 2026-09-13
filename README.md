@@ -26,7 +26,7 @@ available through the UI link and applies to UI and CLI use.
 
 Choose saved-data reports, official collection, media analysis of a saved run, or the
 full pipeline. Upload and validate a CSV/XLSX or select one in `data/input`. Paid modes
-analyze all selected companies and require explicit cost acknowledgment. Excel uses the existing
+analyze all selected companies without an additional confirmation checkbox. Excel uses the existing
 workspace runtime; uncheck it for HTML/CSV-only output. A live log and result links are
 shown in the UI. Only one launcher job runs at a time. Keep the launcher process open
 until it finishes; closing a browser tab does not cancel the job. The UI does not provide
@@ -399,8 +399,7 @@ records follow the existing collection rules. Select **Company file** for batch 
 The launcher defaults to **Create report**: collection, paid search and analysis,
 then report generation. Choose a single registration number or a company file.
 All selected companies receive media checks, including file batches. **Advanced options** contains individual processing modes, the saved
-collection run and optional Excel export. Provider-cost acknowledgement remains
-required before paid requests.
+collection run and optional Excel export. Create report starts the selected workflow directly, including paid providers.
 
 Choose **Build a company list** to add registration numbers one at a time with
 **Add company** (or Enter). Remove entries before starting as needed. The list accepts
@@ -424,3 +423,8 @@ The HTML report includes a readable **Missing data and unfinished checks** table
 with company identity, unavailable check or financial field, explanation and next step.
 The launcher uses pipeline `--limit 0` to analyze all root companies; per-company
 request budgets remain in force.
+
+The manual company list starts collapsed; use **Show list / Hide list** to review
+or remove entries. Saved names are looked up in the local database when entering
+a complete registration number and shown beside list entries. Name lookup does not
+call external data or model providers; Docker must be available.

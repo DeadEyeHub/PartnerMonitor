@@ -27,7 +27,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_command_validation_and_no_shell_input(self):
         self.assertEqual(self.app.command({'mode':'report'})[-1],'report')
-        with self.assertRaises(ValueError):self.app.command({'mode':'full','input':'companies.csv','limit':2})
+        self.app.command({'mode':'full','input':'companies.csv'})
         args=self.app.command({'mode':'full','input':'companies.csv','limit':2,'paid':True})
         self.assertEqual(args[-2:],['--input','/input/companies.csv'])
         for request in [{'mode':'report','run':'a;echo secret'},{'mode':'collect','input':'../.env'},
@@ -72,8 +72,20 @@ class LauncherTests(unittest.TestCase):
             with self.subTest(number=number), self.assertRaises(ValueError):
                 self.app.start({'mode':'collect','input_mode':'single','registration_number':number})
         with self.assertRaises(ValueError):self.app.command({'mode':'collect','input_mode':'unknown'})
-        with self.assertRaises(ValueError):self.app.command({'mode':'full','input_mode':'single','registration_number':'40003248848'})
+        self.app.command({'mode':'full','input_mode':'single','registration_number':'40003248848'})
         self.assertEqual(before,self.app.files())
+
+    def test_saved_name_lookup_is_validated_and_read_only(self):
+        with patch('partner_monitor.launcher.subprocess.run') as run:
+            run.return_value.returncode=0
+            run.return_value.stdout='{"name":"Example Ltd"}'
+            result=self.app.company_name({'registration_number':'01234567890'})
+            self.assertEqual(result['name'],'Example Ltd')
+            self.assertEqual(run.call_args.args[0][-1],'01234567890')
+            self.assertIn('mode=ro',run.call_args.args[0][-2])
+        with patch('partner_monitor.launcher.subprocess.run') as run:
+            with self.assertRaises(ValueError):self.app.company_name({'registration_number':'bad;code'})
+            run.assert_not_called()
 
     def test_upload_validation_and_secret_redaction(self):
         result=self.app.upload({'name':'../test.csv','content':base64.b64encode(b'registration_number\n40000000002\n').decode()})

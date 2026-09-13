@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name=session-token]').content;
 let busy = false, runInitialized = false;
-const companyNumbers=[];
+const companyNumbers=[], companyNames=new Map(), pendingNames=new Map();
 async function api(path, body) {
   const response = await fetch(path,{method:body ? 'POST':'GET',headers:{'X-Session':token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
   const data = await response.json();
@@ -22,7 +22,7 @@ function inputChanged() {
 function renderCompanies(){
   $('companyList').replaceChildren(...companyNumbers.map(number=>{
     const row=document.createElement('li'),label=document.createElement('span'),remove=document.createElement('button');
-    label.textContent=number;remove.type='button';remove.textContent='Remove';remove.setAttribute('aria-label','Remove '+number);
+    label.textContent=number+(companyNames.get(number)?.name?' — '+companyNames.get(number).name:'');remove.type='button';remove.textContent='Remove';remove.setAttribute('aria-label','Remove '+number);
     remove.addEventListener('click',()=>{companyNumbers.splice(companyNumbers.indexOf(number),1);renderCompanies();});
     row.append(label,remove);return row;
   }));
@@ -33,8 +33,30 @@ function addCompany(){
   if(!/^[0-9]{11}$/.test(number)){$('listError').textContent='Enter exactly 11 digits.';return;}
   if(companyNumbers.includes(number)){$('listError').textContent='This company is already in the list.';return;}
   if(companyNumbers.length>=100){$('listError').textContent='Maximum 100 companies per list.';return;}
-  companyNumbers.push(number);$('listNumber').value='';renderCompanies();$('listNumber').focus();
+  companyNumbers.push(number);lookupName(number).then(renderCompanies);$('listNumber').value='';$('listName').textContent='';renderCompanies();$('listNumber').focus();
 }
+function lookupName(number){
+  if(companyNames.has(number))return Promise.resolve(companyNames.get(number));
+  if(pendingNames.has(number))return pendingNames.get(number);
+  const pending=api('/api/company-name',{registration_number:number}).then(result=>{companyNames.set(number,result);return result;})
+    .catch(()=>({name:null,status:'unavailable'})).finally(()=>pendingNames.delete(number));
+  pendingNames.set(number,pending);return pending;
+}
+for(const [input,output] of [['registrationNumber','singleName'],['listNumber','listName']]){
+  $(input).addEventListener('input',async()=>{
+    const number=$(input).value.trim();$(output).textContent='';
+    if(!/^[0-9]{11}$/.test(number))return;
+    $(output).textContent='Looking up saved company name…';
+    const result=await lookupName(number);
+    if($(input).value.trim()!==number)return;
+    $(output).textContent=result.name?number+' — '+result.name:(result.status==='unavailable'?'Name lookup unavailable. You can still add this company.':'No saved name. It will be retrieved during collection.');
+  });
+}
+$('toggleCompanies').addEventListener('click',()=>{
+  const hidden=!$('companyList').hidden;$('companyList').hidden=hidden;
+  $('toggleCompanies').setAttribute('aria-expanded',String(!hidden));
+  $('toggleCompanies').textContent=hidden?'Show list':'Hide list';
+});
 $('addCompany').addEventListener('click',addCompany);
 $('listNumber').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();addCompany();}});
 $('inputMode').addEventListener('change',inputChanged);
@@ -46,7 +68,7 @@ function modeChanged() {
   $('modeHelp').textContent=descriptions[mode];
   $('modeHelp').hidden=mode==='full';
   $('start').textContent=mode==='full'?'Create report':'Run selected step';
-  $('paid').checked=false;inputChanged();
+  inputChanged();
 }
 $('mode').addEventListener('change',modeChanged);modeChanged();
 $('upload').addEventListener('change',async()=>{
@@ -67,7 +89,7 @@ $('launchForm').addEventListener('submit',async event=>{
       if(!companyNumbers.length)throw new Error('Add at least one company to the list.');
     }
     $('start').disabled=true;
-    await api('/api/start',{mode:$('mode').value,input:$('input').value,input_mode:$('inputMode').value,registration_number:$('registrationNumber').value.trim(),registration_numbers:companyNumbers,run:$('run').value.trim(),paid:$('paid').checked,excel:$('excel').checked});
+    await api('/api/start',{mode:$('mode').value,input:$('input').value,input_mode:$('inputMode').value,registration_number:$('registrationNumber').value.trim(),registration_numbers:companyNumbers,run:$('run').value.trim(),excel:$('excel').checked});
     await refresh();
   }catch(error){$('error').textContent=error.message;}
   finally{$('start').disabled=busy;}

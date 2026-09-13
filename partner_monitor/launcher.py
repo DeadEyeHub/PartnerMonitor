@@ -150,13 +150,27 @@ class Launcher:
             raise ValueError('Duplicate registration numbers are not allowed')
         return numbers
 
+    def company_name(self, request):
+        number = request.get('registration_number', '')
+        if not isinstance(number, str) or not re.fullmatch(r'[0-9]{11}', number):
+            raise ValueError('Registration number must contain exactly 11 digits')
+        # Read the Docker volume through the collector; never query external providers.
+        script = "import sqlite3,sys,json; c=sqlite3.connect('file:/data/monitoring.db?mode=ro',uri=True); r=c.execute('SELECT name FROM registry WHERE registration_number=? AND name IS NOT NULL ORDER BY rowid DESC LIMIT 1',(sys.argv[1],)).fetchone(); print(json.dumps({'name':r[0] if r else None}))"
+        try:
+            result = subprocess.run(['docker','compose','run','--rm','-T','--entrypoint','python','collector','-c',script,number],
+                cwd=self.root, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+            if result.returncode: return {'registration_number':number,'name':None,'status':'unavailable'}
+            return {'registration_number':number, **json.loads(result.stdout), 'status':'checked'}
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return {'registration_number':number,'name':None,'status':'unavailable'}
+
     def command(self, request):
         mode = request.get('mode')
         if mode not in {'report','collect','media','full'}: raise ValueError('Invalid workflow')
         numbers = self.manual_registrations(request)
         args = ['docker','compose','run','--rm','-T','collector']
         if mode in {'media','full'}:
-            if request.get('paid') is not True: raise ValueError('Acknowledge paid provider requests')
             limit = 0  # All root companies; per-company provider budgets still apply.
             args += ['pipeline','--limit',str(limit)]
         elif mode == 'collect': args += ['collect']
@@ -288,6 +302,7 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(size))
             if not isinstance(request,dict): raise ValueError('JSON object required')
             if self.path == '/api/start': self.send(202,app.start(request))
+            elif self.path == '/api/company-name': self.send(200,app.company_name(request))
             elif self.path == '/api/upload': self.send(200,app.upload(request))
             else: self.send(404,{'error':'Not found'})
         except PermissionError as exc: self.send(403,{'error':str(exc)})

@@ -1,439 +1,223 @@
 # Partner Monitor
 
-Collect official data about Latvian companies in SQLite. The first stage covers
-fact ingestion, run history, source quality checks, and result inspection.
-Sanctions name screening produces review candidates. Adverse-media search and LLM
-extraction, deterministic risk scoring and final reports are implemented.
+Local research software for collecting Latvian company records, screening names
+against sanctions lists, analyzing adverse media and comparing assessments over time.
+Official observations, provider evidence and deterministic scoring remain separate.
 
-## Local launcher and noncommercial license
+**Noncommercial use only.** See [LICENSE.md](LICENSE.md). There is no startup
+acceptance dialog; the license still applies. This software is not legal clearance
+or a substitute for reviewing source evidence.
 
-This product is licensed for **noncommercial use only** under [LICENSE.md](LICENSE.md).
-Commercial internal screening, paid reports and hosted commercial services are not permitted
-under this license. Third-party components and source data retain their own terms.
+## Features
 
-On Windows, start Docker Desktop, build the collector after code updates, then run:
+- Company input by registration number, a manually assembled list, or CSV/XLSX.
+- UR company, ownership, officer, proceeding and financial records; VID data and tax debt.
+- Name screening against EU, Latvian and UN lists supplied by FID.
+- Tavily search/extraction and model analysis through OpenRouter.
+- Versioned scoring with preserved evidence, HTML/CSV reports and optional CLI Excel export.
+- Manual monitoring against a specifically selected saved assessment.
+- Readable missing-data explanations and separate provider request/response logs.
+
+## Requirements
+
+- Docker Desktop with Linux containers and Docker Compose.
+- Python 3.10+ on the host for the local launcher.
+- Host `openpyxl` for XLSX upload validation: `python -m pip install openpyxl`.
+- Tavily and OpenRouter keys for news analysis; official collection does not use these keys.
+- For Excel: the configured Codex workspace Node runtime with `@oai/artifact-tool`.
+  This runtime is external to the repository and is not installed by Docker.
+
+The full UI workflow includes Excel export. If that runtime is unavailable, use the
+CLI to generate HTML/CSV/JSON, or configure the runtime before using the UI.
+A missing Excel runtime may mark the launcher job failed after HTML/CSV were generated.
+
+## Setup
+
+Run commands from this repository directory in PowerShell:
 
 ```powershell
+# First setup only: do not overwrite an existing .env.
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+New-Item -ItemType Directory -Force data/input, data/reports | Out-Null
+python -m pip install openpyxl
 docker compose build collector
 ./scripts/Start-UI.ps1
 ```
 
-The launcher opens `http://127.0.0.1:18764`. Use `-Port 18765` if the port is occupied.
-It needs local Python 3.10 or newer; XLSX upload validation additionally needs `openpyxl`.
-Pipeline dependencies run inside Docker, and CSV uploads use the Python standard library.
-The launcher opens directly without a license dialog. The repository license remains
-available through the UI link and applies to UI and CLI use.
+Set `TAVILY_API_KEY`, `OPENROUTER_API_KEY` and the desired `OPENROUTER_MODEL` in
+`.env` before starting a full assessment. The model identifier must be available
+through your provider account. `.env.example` documents defaults and optional limits.
+Never put real keys in tracked configuration, input files, URLs or CLI arguments.
 
-Choose saved-data reports, official collection, media analysis of a saved run, or the
-full pipeline. Upload and validate a CSV/XLSX or select one in `data/input`. Paid modes
-analyze all selected companies without an additional confirmation checkbox. Excel uses the existing
-workspace runtime; uncheck it for HTML/CSV-only output. A live log and result links are
-shown in the UI. Only one launcher job runs at a time. Keep the launcher process open
-until it finishes; closing a browser tab does not cancel the job. The UI does not provide
-process cancellation or manage workflows started independently through the CLI.
+The UI opens at [127.0.0.1:18764](http://127.0.0.1:18764/). Choose another port with
+`./scripts/Start-UI.ps1 -Port 18765`. SQLite has no network port. Keep Docker and
+the launcher running until the job finishes; closing a browser tab does not cancel it.
 
-The server binds only to loopback, checks request origins and page-session tokens,
-and exposes only approved report file types, not `.env` or the database. Credentials
-remain local. Redacted execution logs are stored under `data/reports/launcher-logs`.
-The Excel link is shown only when its embedded assessment ID matches the current report.
-The Docker images also include the agreement at `/LICENSE.md`.
+## Create a report
 
-## Run and inspect
+Choose **Create report**, then an input method:
 
-Run commands from this directory. Rebuilding preserves the existing
-`monitoring-data` volume. SQLite does not require a network port.
-
-```sh
-docker compose build collector
-docker compose run --rm collector collect --input /input/companies.demo.csv
-docker compose run --rm collector status
-docker compose run --rm collector report
-docker compose run --rm collector company REGISTRATION_NUMBER
-```
-
-Open `data/reports/latest.html` in a browser to inspect source statuses,
-companies, and expandable data tables. Report labels are in English; official
-names, source field identifiers, and source text retain their original language.
-
-The local `data/input/companies.demo.csv` contains 25 real SIA companies whose
-names contain `būv` and whose source registry records have no termination date.
-This is a technical sample, not a verified construction-sector classification by NACE.
-Place your own CSV/XLSX in `data/input/`.
-Required column: `registration_number` (11 digits, preferably stored as text).
-Optional columns: `name`, `partner_type`, `comment`, `business_unit`.
-XLSX uses the first worksheet and its first row as headers. CSV uses UTF-8 with
-commas, semicolons, or tabs. Duplicate and invalid numbers are rejected before
-downloading. Input files and collected data are excluded from Git.
-
-## Credentials
-
-If `.env` is missing, copy `.env.example` to `.env`.
-Store all usernames, passwords, and API keys only in the local `.env`, which is
-excluded from Git and the Docker build context. `.env.example` contains empty
-secret fields and public settings only. Current public downloads need no keys.
-Override a source URL with `<SOURCE_ID>_URL`, for example `UR_MEMBERS_URL`.
-Do not include credentials in URLs or command arguments.
-
-## Sources and tables
-
-Actual URLs, CSV headers, and keys were checked on 2026-09-12 and recorded in
-`config/sources.json`. There are 22 file sources plus a separate tax debt evidence import.
-
-| Source | Tables |
+| Method | Behavior |
 |---|---|
-| UR: registry and historical names | `registry`, `company_names` |
-| UR: SIA members and AS stockholders | `members`, `stockholders` |
-| UR: beneficial owners and officers | `beneficial_owners`, `officers` |
-| UR: proceedings and restrictions | `insolvency_proceedings`, `liquidations`, `activity_restrictions`, `securing_measures` |
-| UR: sanctions-related information | `ur_sanctions` |
-| UR: financial statements | `financial_statements`, `balance_sheets`, `income_statements`, `cash_flow_statements`, `financial_metrics` |
-| VID | `vat_status`, `vid_suspensions`, `vid_ratings`, `tax_payments`, `tax_debt` |
-| FID: EU, Latvian and UN lists | `sanction_entities`, `sanction_names`, `sanction_identifiers`, `sanction_attributes` |
+| Single company | Enter an 11-digit registration number. |
+| Build a company list | Add numbers using **Add company** or Enter; review/remove with **Show list**. |
+| Company file | Upload or select a CSV/XLSX file. |
 
-Official catalogs: [UR](https://data.gov.lv/dati/dataset/uz),
-[financial statements](https://data.gov.lv/dati/dataset/gada-parskatu-finansu-dati),
-[VID](https://www.vid.gov.lv/lv/atvertie-dati-nodoklu-muitas-un-akcizes-precu-aprites-joma),
-[FID](https://sankcijas.fid.gov.lv/lv/meklet-sankciju-sarakstos).
+Manual lists accept 1–100 unique numbers. Names already present in the local database
+are shown beside numbers; lookup requires Docker but makes no external provider calls.
+The manual list is page state and is lost on reload until submitted.
 
-## Storage and normalization
+**Create report starts paid provider requests without a separate checkbox.** The UI
+analyzes all selected root companies. Per-company budgets still apply, but are not
+a guaranteed currency spending cap. Related official records follow the ownership
+traversal rules and do not automatically receive root-company news analysis.
 
-- `/data/raw/objects/<sha256>.<format>`: immutable source files; identical content is stored once.
-- `/data/raw/runs/<run_id>.json`: input list, source definitions, snapshots, and ownership traversal limits.
-- `/data/raw/cache/`: pointers used for conditional ETag/Last-Modified requests.
-- `/data/monitoring.db`: records grouped by run; earlier observations are preserved.
+The pipeline collects official data, searches and analyzes news, generates reports,
+then exports Excel. Only one job can run through a launcher instance at a time;
+independent CLI processes are not covered by that lock.
 
-Each domain row has `run_id`, `registration_number`, `snapshot_id`, `source_row`,
-`row_hash`, and `raw_json`. Normalized source fields are separate SQL columns.
-Identifiers remain text, dates use ISO format, and amounts use exact decimal strings.
-Missing values are NULL; actual zero values are preserved. Initial prototype tables
-remain in the database.
+### File format
 
-Financial records join on both `statement_id` and `file_id`. Year, reporting period,
-statement type, currency, and `rounded_to_nearest` are retained; different statements
-for the same year are not merged. Amounts retain source units, so monetary comparisons
-must account for rounding units. VID tax payments use EUR thousands as specified by
-the source field names. The `current_ratio`, `debt_to_assets`, and `net_margin` metrics
-use values from a single statement. Missing inputs or nonpositive denominators produce
-NULL with a reason. Annual growth and selection of a single latest statement are not
-implemented yet.
-
-Ownership traversal follows only owner numbers present in the Latvian registry.
-Default depth is 2; `--ownership-depth` supports up to 5. Cycles are not repeated,
-and reaching the limit generates a warning. ROOT/RELATED roles and depth are stored
-in `run_companies`. These are ownership links, not conclusions about sanctions control.
-
-## SQL inspection
-
-```sh
-docker compose run --rm sqlite
+```csv
+registration_number,name
+40103485560,
 ```
 
-```sql
-.headers on
-.mode box
-SELECT run_id, started_at, status FROM monitoring_runs ORDER BY started_at DESC;
-SELECT source, status, rows_imported, detail FROM v_source_status WHERE run_id = 'RUN_ID';
-SELECT * FROM v_company_overview WHERE run_id = 'RUN_ID';
-SELECT * FROM v_financials WHERE run_id = 'RUN_ID' AND registration_number = 'REGISTRATION_NUMBER';
-SELECT * FROM v_vat WHERE run_id = 'RUN_ID';
-SELECT * FROM v_insolvency WHERE run_id = 'RUN_ID';
-SELECT * FROM v_vid_activity WHERE run_id = 'RUN_ID';
-SELECT * FROM tax_debt WHERE run_id = 'RUN_ID';
-PRAGMA integrity_check;
-PRAGMA foreign_key_check;
-```
+`registration_number` is required: exactly 11 ASCII digits, stored as text to preserve
+leading zeros. Optional columns: `name`, `partner_type`, `comment`, `business_unit`.
+CSV accepts UTF-8 (including BOM), comma/semicolon/tab separators. XLSX reads the
+first worksheet with headers in row one. Invalid or duplicate numbers are rejected.
+UI upload size is limited to 5 MB. No sample input is required or guaranteed to exist
+in a fresh clone; `data/` is ignored by Git.
 
-`v_insolvency` distinguishes ACTIVE/ENDED/FUTURE/UNKNOWN as of the run date.
-`v_vid_activity` describes individual restriction records, not an aggregate company
-status. An absent record does not automatically mean ACTIVE. UR events without end
-dates retain their source information; missing dates are not inferred.
+## Monitoring
 
-## Statuses and limitations
+Choose **Monitoring**, select a previous report, optionally open it using
+**Open saved report**, then press **Check for changes**.
 
-Run statuses: COMPLETED/PARTIAL/FAILED. Source statuses: COMPLETED/ERROR/MANUAL_REQUIRED.
-Company source statuses: FOUND/NO_RECORDS/ERROR/NOT_CHECKED/LOADED.
-NO_RECORDS only means no matching row in a successfully processed file. Missing
-beneficial owners or financial statements do not imply high risk. LOADED for sanctions
-means a list was imported; screening outcomes are stored separately in `sanctions_screening` and `sanctions_candidates`.
+The launcher uses the selected report's root-company list, collects fresh official
+observations and performs new paid media analysis. The result compares with that
+specific assessment, not whichever report happened to run last. The summary shows
+old/new scores, score differences and recorded changes; detailed changes follow.
 
-Retrieval time, HTTP Last-Modified, and dates within sources are stored separately.
-FID is the agreed source for EU, UN and Latvian lists at this stage. XML dates older
-than seven days are informational and do not make a run PARTIAL. Missing or future
-dates and failed/missing inputs still require attention. A fresh download does not reset the XML date.
-All three FID lists are downloaded through the website's POST form with a temporary
-CSRF token; tokens are not persisted. The previous collector already used POST;
-a diagnostic GET failure did not represent a collector failure.
+Only baselines with the current scoring version are offered. When methodology changes,
+create a fresh baseline. Earlier reports remain archived. Source failures are not
+interpreted as removal of an earlier official problem. Monitoring is manual; there
+is no automatic schedule, notification service or background watcher.
 
-### Sanctions screening
+## Reports and interpretation
 
-Each run screens imported company names, historical names, owners, shareholders,
-beneficial owners and officers against EU/LV/UN names and aliases. Related companies
-are screened in their own rows. Rules normalize case, diacritics and punctuation,
-compare reordered name tokens, and propose similar names at a 0.92 string-similarity
-threshold when there is a shared token. Scores are string similarity, not a probability
-of identity. Names shorter than four characters are not matched automatically.
+| Artifact | Purpose |
+|---|---|
+| `data/reports/latest.html` | Overview, events, changes, missing checks and expandable evidence |
+| `data/reports/latest.csv` | Eight-field root-company overview, UTF-8 BOM |
+| `data/reports/latest.xlsx` | Overview, Findings, Financials, Sanctions, Changes, Data Quality |
+| `data/reports/latest.workbook.json` | Shared report payload for workbook generation |
+| `data/reports/report-<assessment_id>.html/.csv` | Archived generated assessment |
+| `data/reports/assessments/<assessment_id>.json` | Preserved assessment state and comparison facts |
+| `data/reports/web-logs/<job_id>/` | Execution log plus `tavily.html` and `model.html` |
+| `data/reports/model-final-<job_id>.html` | Saved company-level model results |
 
-Every candidate retains the UR record key and snapshot, list entity ID and snapshot,
-matched alias, rule, score, legal reference and date-of-birth comparison where available.
-All candidates remain NEEDS_REVIEW, including exact names or conflicting birth dates.
-No automatic sanction designation, identity clearance, indirect ownership/control
-attribution, cross-script transliteration or sectoral-sanctions evaluation is performed.
-Corporate legal forms are not stripped. Identifier-only matching is not implemented.
-These limitations must be considered when interpreting an absence of candidates.
+CSV fields: Company, Registration number, Reliability score, Risk class, Coverage,
+Main reason, New findings, Recommended action. Excel export is a separate host step;
+Docker alone generates HTML/CSV/JSON. Earlier snapshots without archived HTML can be
+viewed through the UI's saved-report renderer.
 
-Company screening states:
-- CANDIDATES_REQUIRE_REVIEW: inspect candidates and the coverage limitations.
-- INCOMPLETE: no candidates, but a required source/company name is absent or required date metadata is missing/invalid.
-- NO_CANDIDATES: no candidates under these rules and no tracked source/date gaps; not legal clearance.
-- Historical runs with no screening rows are shown as NOT_PERFORMED.
+`COMPLETED`, `PARTIAL` and `FAILED` describe execution. `PROVISIONAL` describes an
+assessment with incomplete checks. A completed collection need not mean completed
+news analysis. Coverage measures seven areas and is not a probability of correctness.
+Missing data is not replaced by zero and does not itself deduct points.
 
-```sh
-docker compose build collector
-docker compose run --rm collector collect --input /input/companies.demo.csv --replay RUN_ID --refresh-sanctions
-docker compose run --rm collector report
-```
+Weights and thresholds are defined in [config/risk_rules.json](config/risk_rules.json)
+and rendered into the report. See [assessment methodology](docs/assessment.md).
+Financial amounts account for currency and scale. Negative-equity duration penalties
+do not stack; the large annual-loss penalty is separate. Event grouping preserves
+all evidence and uses the largest applicable penalty within one grouped event.
 
-This refresh downloads EU/LV/UN while retaining the other snapshots and verified VID
-PDFs from the replayed run. A plain replay remains offline. Candidate results and
-source-date warnings appear in the HTML report and company inspection command.
+## Evidence limitations
 
-The 2026-09-12 source audit found EU generationDate 2026-08-05 (6,234 entities),
-LV PublishDate 2018-03-29 (3 entities), and UN dateGenerated 2026-09-04 (736 people,
-275 entities). [The UN official page](https://main.un.org/securitycouncil/en/content/un-sc-consolidated-list)
-reports the same update date and counts; this is metadata corroboration, not a byte-level
-comparison. Direct programmatic access to that page returned HTTP 202 with an empty
-body in this environment. [The EU primary service](https://webgate.ec.europa.eu/fsd/fsf)
-returned HTTP 401 without authentication. EU and LV currentness is therefore not
-independently verified. FID lists cover targeted financial sanctions; the report does
-not cover all possible trade/service restrictions or OFAC/UK lists.
+- FID supplies all three sanctions lists. Direct EU/UN integration is not implemented.
+  A name candidate requires identity/applicability review; similarity is not identity.
+  No automatic ownership/control attribution, sectoral restrictions or legal clearance.
+- VID uses its legal-person form and an available working date. It verifies company/date
+  and saves HTML/PDF evidence. Valid HTML can be imported if the PDF download is unavailable;
+  the missing PDF is recorded. Conflicting documents or unrecognized results are rejected.
+  No published debt above the threshold is not proof of zero debt. See source dates.
+- News analysis works on bounded evidence excerpts. An explanation and separate yes/no
+  relevance verdict do not prove misconduct. Ambiguity and incomplete work remain visible.
+- Exact quotes (whitespace normalized), reviewed case links and explicit Latvian civil-case
+  identifiers can group events. Fuzzy similarity alone does not automatically merge cases.
 
-### VID tax debt
+## CLI
 
-[VID publishes debt exceeding EUR 150](https://www.vid.gov.lv/lv/nodoklu-paradnieki)
-through a separate interactive form. The collector opens Chromium, selects a legal
-person, fills the company name, registration number and an available date, and
-submits the form. It saves the current HTML response and the official downloaded
-PDF as SHA-256-addressed objects. Both documents must agree on the company, date,
-status and amount before the result is imported. Unknown wording, missing PDFs,
-service errors and CAPTCHA leave the company NOT_CHECKED; CAPTCHA is not solved.
-
-The default date is the third completed working day before today in Europe/Riga,
-excluding weekends and Latvian public holidays. Before 07:00 it uses an additional
-working-day buffer. Set `VID_DEBT_QUERY_DATE=2026-09-09` in `.env` to request a
-specific historical date (ISO format). A date unavailable at VID is never treated
-as no debt. The Docker image includes Chromium and ChromeDriver; Chromium runs as
-the non-root monitor user, with Docker isolation and without its nested namespace
-sandbox because Docker's default seccomp blocks it. Local execution requires
-Chrome/Chromium and the Python requirements.
-
-To refresh debt while reusing a previous run's other source snapshots:
-
-```sh
-docker compose build collector
-docker compose run --rm collector collect --input /input/companies.demo.csv --replay RUN_ID --refresh-debt
-docker compose run --rm collector report
-```
-
-A plain replay makes no browser/network requests and verifies hashes of saved
-evidence, including HTML/PDF artifacts. Browser cookies stay in a temporary profile
-and are removed when the browser exits. No session credentials enter Git.
-
-For manually verified evidence, create a UTF-8 CSV with this header:
-
-```text
-registration_number,effective_date,published_debt_amount,publication_threshold,query_status,evidence_url
-```
-
-Allowed statuses: PUBLISHED_DEBT or NO_PUBLISHED_DEBT_ABOVE_THRESHOLD. The latter
-requires an empty amount, not zero. Date and threshold are required. Use a public
-VID evidence URL without credentials, and retain the supporting document separately
-for verification of manual input. A header template is in `examples/tax_debt.example.csv`.
-
-```sh
-docker compose run --rm collector collect --input /input/companies.demo.csv --tax-debt-file /input/tax_debt.csv
-```
-
-Alternatively, set `TAX_DEBT_FILE=/input/tax_debt.csv` in `.env`. Companies without
-evidence remain NOT_CHECKED. A run with any unverified company debt check is PARTIAL.
-The CLI returns exit code 2 for PARTIAL and exit code 1 for errors.
-
-## Replay and comparison
-
-```sh
-docker compose run --rm collector collect --input /input/companies.demo.csv --replay RUN_ID
-docker compose run --rm collector compare --run NEW_RUN_ID --previous OLD_RUN_ID
-docker compose run --rm collector sources
-docker compose run --rm collector collect --input /input/companies.demo.csv --sources ur_register,ur_names
-```
-
-Replay performs no source downloads and verifies SHA-256 hashes. It creates a new run.
-Comparison reports NEW/CHANGED/REMOVED_FROM_SOURCE/UNCHANGED for companies shared by
-both runs and successfully imported sources. Removing a row does not mean a risk was
-resolved. Unavailable sources produce NOT_COMPARABLE. Changing the input list does
-not count as company removal. Sanctions list snapshots can be compared by hash;
-row-level XML and risk-event comparisons are planned for a later stage.
-
-## Development
-
-Python 3.10+:
-
-```sh
-python -m pip install -r requirements.txt
-python -m partner_monitor collect --input data/input/companies.demo.csv
-python -m unittest discover -s tests -v
-```
-
-Local execution uses `DATA_DIR` from `.env` and a separate database on disk.
-Docker uses the shared SQLite volume. `docker compose down -v` deletes that volume
-and its data; removing a temporary container does not delete the data.
-
-
-## Adverse media: name search, triage and evidence
-
-Put `TAVILY_API_KEY`, `OPENROUTER_API_KEY` and the desired `OPENROUTER_MODEL` in the
-ignored `.env`. The two-stage pipeline requires strict structured-output support.
-It does not set temperature because the tested model endpoints do not support it.
-
-```sh
-docker compose build collector
-docker compose run --rm collector web --run RUN_ID --limit 2 --dry-run
-docker compose run --rm collector pipeline --run RUN_ID --limit 2
-docker compose run --rm collector web-status --job JOB_ID
-docker compose run --rm collector pipeline --job JOB_ID
-```
-
-Search uses current/historical names and separate Latvian topics, never registration
-numbers. It requests snippets, not full raw pages. Code first checks for a company
-name in the title/snippet. An analyst receives at most 1,200 snippet characters and explains relevance. A second,
-fresh request receives the same news and explicit explanation and returns only yes/no.
-Both receive source historical-name end dates and code-generated date review flags. Only selected publications proceed to Tavily Extract and evidence analysis.
-The evidence model receives at most 5,000 characters of company-centered paragraphs,
-not an entire raw page. Snippet triage never creates findings.
-
-Default limits per company/job: ten triaged articles, five evidence articles, five
-extraction requests, twenty model HTTP attempts including retries and 60,000 cumulative
-model-input characters. Reaching 40,000 provider-reported tokens stops subsequent
-model requests; an in-flight response may exceed that threshold. These are workload
-bounds, not a guaranteed currency spending cap. Optional lower `WEB_MAX_*` values are
-listed in `.env.example`. Limits and the model are pinned when the job starts and
-remain in force across resumes. Version-2/3/4 jobs remain readable but cannot be resumed
-with the version-5 selection logic; create a new job for the new method.
-
-`web_quality` in the HTML company card shows retrieved results, retained URLs,
-name candidates, filters, triage, available evidence, analyses, duplicates, budget gaps
-and reported usage. `web_selection` shows snippets and selection reasons. `web_judgments` shows the
-analyst explanation, verifier verdict and historical-name date checks. No start dates
-are invented when UR only supplies an end date. Findings
-remain NEEDS_REVIEW. Excerpt-only results remain EXCERPT_REVIEW and keep coverage
-PARTIAL. Similar-event links are review suggestions; they do not merge findings or
-confirm an event. Exact cleaned evidence copies skip repeated detailed analysis.
-
-`web` supports separate `--mode search` and `--mode analyze --job JOB_ID` operations.
-Analyze mode can call Tavily Extract and therefore also needs the Tavily key. New jobs
-perform fresh paid searches. Resume reuses successful queries/triage/analysis and
-preserves request-budget reservations, including failed requests. The `pipeline`
-command also accepts `--input` to collect official data first, or `--input --replay`
-to replay official snapshots. Official replay does not replay paid media searches.
-
-Every job writes a live HTML execution log under `data/reports/web-logs/JOB_ID/index.html`.
-After a pass/report, that folder also contains separate `tavily.html` and `model.html`
-files containing only provider requests and responses. The durable journal is stored
-under `raw/web_logs` in the data volume. Credentials are redacted; request headers
-and raw HTTP error bodies are excluded. Provider-returned reasoning fields remain in
-the full response. Logs do not reveal internal provider execution.
-
-See [the operation guide](docs/media-pipeline.md) for validation, limitations and the
-live comparison. No adverse-media result establishes absence of risk or legal clearance.
-
-
-## Compact report export
-
-`pipeline` also writes `model-final-JOB_ID.html`: a standalone company summary with
-saved finding summaries, source links and final relevance verdicts, without prompts,
-analyst explanations or provider metadata. A relevance yes is not a finding of
-involvement; missing findings are not a clean bill of health. Only the selected web
-job is included, so earlier runs cannot silently populate the new result.
-
-The report command writes both `latest.html` and `latest.csv`. CSV includes only root
-companies and exactly the eight Overview fields from task section 26: Company,
-Registration number, Reliability score, Risk class, Coverage, Main reason,
-New findings, Recommended action. UTF-8 BOM preserves Latvian text in Excel.
-Import registration numbers as text. Formula-leading text is escaped for CSV safety.
-
-Reliability scores now use the versioned rules in `config/risk_rules.json`.
-New findings is blank for the first assessment baseline and counts new distinct events
-afterwards. Coverage is a percentage of seven
-equally weighted areas: UR identity, VID rating, VAT lookup, financial data, tax debt,
-sanctions name screening and web analysis. No web result is a zero-risk conclusion.
-Source dates remain visible in the HTML; raw JSON fields are hidden from its tables.
-Old run history is retained. Replay creates a new run with the current FID date policy.
-
-## Final assessment and Excel
-
-Build the collector after code changes, then generate all final artifacts from saved data:
+Replace `RUN_ID`, `JOB_ID` and `ASSESSMENT_ID` with actual identifiers. Paths under
+`/input` refer to local `data/input`; `/reports` refers to local `data/reports`.
 
 ```powershell
-docker compose build collector
-./scripts/Finish-Report.ps1 -Run c71f9f27fc5b44feb51fbf217e8fda1d
+# Official collection only; no Tavily/model calls.
+docker compose run --rm collector collect --input /input/companies.csv
+# Full workflow, all root companies. Paid calls.
+docker compose run --rm collector pipeline --input /input/companies.csv --limit 0
+# Inspect saved data and regenerate reports without paid calls.
+docker compose run --rm collector status
+docker compose run --rm collector company 40103485560 --run RUN_ID
+docker compose run --rm collector report --run RUN_ID
+# Preview the scope of a new web job without running it.
+docker compose run --rm collector web --run RUN_ID --limit 0 --dry-run
+# Inspect/resume an existing compatible media job; resume can incur charges.
+docker compose run --rm collector web-status --job JOB_ID
+docker compose run --rm collector pipeline --job JOB_ID
+# Replay official snapshots but refresh VID debt.
+docker compose run --rm collector collect --input /input/companies.csv --replay RUN_ID --refresh-debt
 ```
 
-This runs the Docker report command (no provider calls), then exports `data/reports/latest.xlsx`
-with Overview, Findings, Financials, Sanctions, Changes and Data Quality. It also writes
-HTML, compact CSV and a reproducible workbook JSON payload. Excel export uses the installed
-workspace Node/Artifact Tool runtime on Windows; use `-RuntimeRoot` for a different location.
-Docker alone generates HTML/CSV/JSON. `-SkipReport` exports the existing payload to Excel.
-`-Preview` also renders the six workbook sheets for inspection.
+CLI `pipeline --limit` defaults to 3; use `0` for all roots. A plain `collect --replay`
+reuses official snapshots. `pipeline --input ... --replay ...` still performs paid
+news work. CLI `--baseline ASSESSMENT_ID` compares against that report, but does not
+replace the explicitly supplied input list; use the UI for automatic scope reuse.
 
-The scoring engine writes immutable `risk_assessments` and `risk_events` to SQLite and
-JSON snapshots under `data/reports/assessments`. Repeating unchanged input is idempotent.
-See [assessment methodology](docs/assessment.md) for penalties, event links, reviews,
-history, scope and operational limitations.
+```powershell
+# Build Excel from saved data; no provider calls.
+./scripts/Finish-Report.ps1 -Run RUN_ID
+# Export an existing workbook payload only.
+./scripts/Finish-Report.ps1 -SkipReport
+# Override the external workspace dependency root when necessary.
+./scripts/Finish-Report.ps1 -Run RUN_ID -RuntimeRoot "C:/path/to/dependencies"
+```
 
-To check one company, choose **Collect official data + reports** or **Full pipeline**,
-select **Single company by registration number**, and enter its 11-digit Latvian
-registration number. No spreadsheet or company name is required. The launcher saves
-a one-row input CSV locally, collects official records, and generates the usual reports.
-Full pipeline performs paid web analysis for exactly one root company; related official
-records follow the existing collection rules. Select **Company file** for batch processing.
+## Storage and maintenance
 
-The launcher defaults to **Create report**: collection, paid search and analysis,
-then report generation. Choose a single registration number or a company file.
-All selected companies receive media checks, including file batches. Create report starts the full workflow directly, including paid providers and Excel export.
+The Compose `monitoring-data` volume holds `/data/monitoring.db`, source objects,
+run manifests and durable provider journals. Local `data/input` and `data/reports`
+are bind-mounted separately. Back up both the volume and local reports/inputs;
+reports alone are not a database backup. Avoid deleting the volume during upgrades.
 
-Choose **Build a company list** to add registration numbers one at a time with
-**Add company** (or Enter). Remove entries before starting as needed. The list accepts
-1–100 unique 11-digit numbers and remains in the page until reload. Full pipeline
-performs web analysis for every listed company; the backend saves the submitted
-list as a local CSV for the existing collection pipeline.
+After source/configuration changes, rebuild the collector. After launcher changes,
+restart the launcher when idle. Changing `.env` does not require rebuilding the image;
+new containers read it, while existing jobs retain their model/budget settings.
 
-Current scoring parameters are defined in `config/risk_rules.json` and displayed
-in the generated report methodology table. See `docs/assessment.md` for evidence
-selection and event-linking rules. VID queries use the current imported legal name,
-including when the input contains only registration numbers.
+```powershell
+python -m pip install -r requirements.txt
+python -B -m unittest discover -s tests -q
+# Preview allowed temporary-artifact cleanup; --apply performs it.
+python -m partner_monitor.artifact_cleanup
+```
 
-VID stores the validated current HTML statement even if the optional PDF download
-is unavailable; the evidence detail explicitly records that failure. Identity/date
-validation and HTML/PDF disagreement still prevent accepting an invalid result.
+See [artifact retention](docs/artifact-retention.md),
+[media pipeline operations](docs/media-pipeline.md) and
+[completed cleanup](docs/cleanup-review.md). Cleanup does not delete evidence or history.
 
-The HTML report includes a readable **Missing data and unfinished checks** table
-with company identity, unavailable check or financial field, explanation and next step.
-The launcher uses pipeline `--limit 0` to analyze all root companies; per-company
-request budgets remain in force.
+## Code map
 
-The manual company list starts collapsed; use **Show list / Hide list** to review
-or remove entries. Saved names are looked up in the local database when entering
-a complete registration number and shown beside list entries. Name lookup does not
-call external data or model providers; Docker must be available.
+| Modules | Responsibility |
+|---|---|
+| `launcher`, `launcher_http`, `launcher_jobs`, `launcher_history` | Local UI server, jobs and report history |
+| `collection`, `downloads`, `normalize`, `database` | Official ingestion, snapshots and normalization |
+| `debt_browser`, `debt` | VID form evidence and import |
+| `web_media`, `media_selection`, `web_logging` | Paid provider workflow, evidence selection and logs |
+| `assessment`, `event_identity`, `methodology` | Versioned deterministic scoring and event grouping |
+| `report_data`, `report_view`, `report_html`, `report_renderer` | Shared payload, readable sections and HTML |
+| `scripts/Finish-Report.ps1`, `scripts/build-workbook.mjs` | Host Excel export |
 
-## Manual monitoring
-
-Choose **Monitoring**, select a saved report and press **Check for changes**. The
-launcher reuses exactly the root companies in that report, collects current official
-records and performs fresh media analysis. It compares against the selected assessment
-ID, even if other reports were created later. Only baselines using the current scoring
-rules are offered. Earlier official events are retained when their source check fails.
-
-**Open saved report** displays the archived assessment. New HTML and CSV exports are
-also preserved as `report-<assessment_id>.html/.csv`; older assessments without an HTML
-archive are rendered from their saved report data. Existing CLI processing modes remain
-available for diagnostics. Monitoring is manual; no automatic schedule is created.
+Secrets, database files, source snapshots and personal input/report data are excluded
+from Git. The UI is loopback-only and is not designed as a publicly hosted service.

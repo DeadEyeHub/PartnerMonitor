@@ -13,3 +13,5 @@ __pycache__/
 .idea/
 .vscode/
 node_modules/
+
+/README.private.ru.md

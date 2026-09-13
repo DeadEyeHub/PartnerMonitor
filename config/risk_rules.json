@@ -11,5 +11,9 @@
     "persistent_negative_equity": 30,
     "two_year_negative_equity": 20,
     "large_annual_loss": 50
+  },
+  "financial": {
+    "loss_threshold_eur": 50000,
+    "loss_lookback_years": 3
   }
 }

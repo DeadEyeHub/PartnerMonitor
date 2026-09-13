@@ -406,12 +406,9 @@ Choose **Build a company list** to add registration numbers one at a time with
 performs web analysis for every listed company; the backend saves the submitted
 list as a local CSV for the existing collection pipeline.
 
-Scoring v1.2: consecutive negative equity ending in the latest reporting year
-costs 15 / 20 / 30 points for 1 / 2 / 3 years, without stacking. A net annual
-loss strictly greater than EUR 50,000 in any of the latest three calendar reporting
-years costs another 50 points once per company, with all qualifying years retained
-as evidence. Currency and scale must permit EUR comparison; ambiguous statements
-are flagged. VID queries use the legal name from the current imported registry,
+Current scoring parameters are defined in `config/risk_rules.json` and displayed
+in the generated report methodology table. See `docs/assessment.md` for evidence
+selection and event-linking rules. VID queries use the current imported legal name,
 including when the input contains only registration numbers.
 
 VID stores the validated current HTML statement even if the optional PDF download

@@ -5,6 +5,7 @@ from .inspection import summary, company, display_label
 from .sources import load_sources
 from .report_html import esc, table
 from .report_view import missing_data_rows
+from .methodology import rows as methodology_rows, summary as methodology_summary
 
 def render_report(db,run_id,path,baseline=None):
     data = summary(db,run_id)
@@ -57,7 +58,7 @@ def render_report(db,run_id,path,baseline=None):
       '<style>body{font:15px system-ui;margin:32px;background:#f5f7fa;color:#172435}h1,h2{color:#133b55}table{border-collapse:collapse;background:white;width:100%}td,th{padding:9px;border:1px solid #dce3ea;text-align:left;vertical-align:top}th{background:#e8eff6}details{margin:12px 0;padding:12px;background:white;border:1px solid #dce3ea}summary{cursor:pointer;font-weight:600}.scroll{overflow:auto}.muted{color:#596574}a{color:#075c9a}</style>',
       '<h1>Partner Monitoring Report</h1>',
       '<p>Official-data run '+esc(run_id)+' · '+esc(data['run']['started_at'])+' · '+esc(data['run']['status'])+'</p>',
-      '<p>Score starts at 100: applicable sanctions −100, cartel −30, court dispute −5, other negative event −15. Negative equity: one latest year −15, two consecutive years −20, three consecutive years −30 (not cumulative). Annual loss strictly above EUR 50,000 in any of the latest three reporting years: −50 once, additional to the equity penalty. Minimum 0. Below 70: not recommended. One case is charged once. Historical events do not automatically expire. Missing data does not reduce the score; incomplete checks make the recommendation provisional.</p>',
+      '<details><summary>Scoring methodology</summary><p>'+esc(methodology_summary(payload['rules']))+'</p>'+table(methodology_rows(payload['rules']))+'</details>',
       '<p>Assessment '+esc(payload['id'])+' · '+esc(payload['created_at'])+' · '+esc(payload['version'])+'</p>',
       '<p><a href="'+esc(csv_path.name)+'">Download compact CSV</a></p>',
       '<h2>Overview</h2>',table(overview),

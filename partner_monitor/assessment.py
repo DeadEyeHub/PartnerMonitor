@@ -173,7 +173,7 @@ def assess(item, reviews=None):
     for f in financials:
         if re.fullmatch(r'[1-9][0-9]{3}', str(f.get('year', ''))):
             years.setdefault(int(f['year']), []).append(f)
-    for year in range(max(years), max(years)-3, -1) if years else []:
+    for year in range(max(years), max(years)-RULES['financial']['loss_lookback_years'], -1) if years else []:
         rows = years.get(year, [])
         if len(rows) != 1:
             warnings.append('Annual loss check: missing or ambiguous statement for ' + str(year))
@@ -187,9 +187,9 @@ def assess(item, reviews=None):
         except InvalidOperation:
             warnings.append('Annual loss unavailable in EUR for ' + str(year))
             continue
-        if amount < -50000:
+        if amount < -RULES['financial']['loss_threshold_eur']:
             key = digest([reg, 'large_annual_loss'])
-            add(key, 'large_annual_loss', 'Annual loss above EUR 50,000 within the latest three reporting years',
+            add(key, 'large_annual_loss', 'Annual loss above EUR ' + format(RULES['financial']['loss_threshold_eur'], ',') + ' within the latest ' + str(RULES['financial']['loss_lookback_years']) + ' reporting years',
                 f.get('year_ended_on'), 'UR annual statements',
                 'Year=' + str(year) + '; net income EUR=' + str(amount) + '; statement=' + str(f.get('statement_id')) + '; file=' + str(f.get('file_id')),
                 'Official financial statement')

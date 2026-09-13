@@ -4,30 +4,20 @@ The source/model data are immutable. Scoring is deterministic and separate from 
 relevance verdicts. `config/risk_rules.json` owns the weights and thresholds. Change
 its version when changing methodology; different versions start a new comparison baseline.
 
-| Rule | Deduction | Evidence |
-|---|---:|---|
-| sanctions | 100 | A list candidate with a current-run review confirming identity **and applicability to the assessed company** |
-| cartel | 30 | A reported cartel event, with procedural status preserved |
-| court_dispute | 5 | Court dispute or insolvency petition, without implying proven misconduct |
-| other_negative | 15 | Other validated adverse media event, published VID debt, active UR insolvency/legal protection, VID suspension, VID rating C, or negative equity in the latest unambiguous annual statement |
-| persistent_negative_equity | 30 total | Negative equity in each of the three latest consecutive reporting years; replaces the single-year deduction |
+The report generates its methodology table directly from the configured weights,
+financial threshold/window, starting score, floor and recommendation boundary.
+See `config/risk_rules.json` for current values instead of maintaining a second table.
 
-Start at 100, floor at 0. Below 70 is High / Not recommended; 70–99 is Moderate /
-Cooperate with caution; 100 is Low / Eligible for cooperation. These are business
-policy labels, not probabilities. Missing checks never add points or subtract points.
-They mark the recommendation provisional and identify the missing checks explicitly.
-No expiry period has been agreed: historical media events remain scored until an
-explicit evidence review excludes them. An ongoing petition is not proven nonpayment.
-Financial losses, revenue decline and low ratios remain visible evidence, without
-additional arbitrary thresholds. Negative equity uses only one latest-year statement;
-ambiguous multiple filings are flagged rather than silently choosing one.
-For the three-year rule, the window ends at the latest imported reporting year and
-requires exactly one statement with a finite negative equity value in each year.
-Missing years are never bridged using older statements. Missing/invalid equity or
-ambiguous filings prevent the 30-point deduction; a verified negative latest year
-still incurs 15 points. Zero or positive latest equity removes the equity deduction;
-earlier negative years remain visible in Financials. The same equity event ID is used
-for both durations, so the penalties never stack.
+Negative equity uses the consecutive period ending in the latest imported year.
+One, two and three negative years select a single duration penalty; missing years
+are never bridged. Zero or positive latest equity removes that penalty. Ambiguous
+filings are flagged. A qualifying annual loss receives one additional penalty,
+regardless of how many years within the configured window qualify. Currency and
+scale must permit a EUR comparison. Other financial ratios remain evidence.
+
+Missing checks do not change the score. Historical adverse events are not erased
+merely because a later search did not return them. Labels are business policy
+categories, not probabilities.
 
 ## One event, multiple publications
 

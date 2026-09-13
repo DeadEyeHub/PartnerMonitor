@@ -10,6 +10,7 @@ its version when changing methodology; different versions start a new comparison
 | cartel | 30 | A reported cartel event, with procedural status preserved |
 | court_dispute | 5 | Court dispute or insolvency petition, without implying proven misconduct |
 | other_negative | 15 | Other validated adverse media event, published VID debt, active UR insolvency/legal protection, VID suspension, VID rating C, or negative equity in the latest unambiguous annual statement |
+| persistent_negative_equity | 30 total | Negative equity in each of the three latest consecutive reporting years; replaces the single-year deduction |
 
 Start at 100, floor at 0. Below 70 is High / Not recommended; 70–99 is Moderate /
 Cooperate with caution; 100 is Low / Eligible for cooperation. These are business
@@ -20,6 +21,13 @@ explicit evidence review excludes them. An ongoing petition is not proven nonpay
 Financial losses, revenue decline and low ratios remain visible evidence, without
 additional arbitrary thresholds. Negative equity uses only one latest-year statement;
 ambiguous multiple filings are flagged rather than silently choosing one.
+For the three-year rule, the window ends at the latest imported reporting year and
+requires exactly one statement with a finite negative equity value in each year.
+Missing years are never bridged using older statements. Missing/invalid equity or
+ambiguous filings prevent the 30-point deduction; a verified negative latest year
+still incurs 15 points. Zero or positive latest equity removes the equity deduction;
+earlier negative years remain visible in Financials. The same equity event ID is used
+for both durations, so the penalties never stack.
 
 ## One event, multiple publications
 

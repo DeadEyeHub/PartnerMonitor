@@ -68,6 +68,36 @@ def classify(f):
     return 'other_negative'
 
 
+def equity_window(financials, warnings):
+    """Select one finite equity value per consecutive reporting year, never bridge gaps."""
+    years = {}
+    for f in financials:
+        year = str(f.get('year') or '')
+        if not re.fullmatch(r'[1-9][0-9]{3}', year):
+            warnings.append('Invalid financial reporting year; equity trend requires verification')
+            return []
+        years.setdefault(int(year), []).append(f)
+    if not years: return []
+    latest = max(years)
+    selected = []
+    for year in range(latest, latest - 3, -1):
+        rows = years.get(year, [])
+        if len(rows) != 1:
+            warnings.append(('Multiple latest-year financial statements; negative equity requires statement selection'
+                if year == latest and rows else 'Three-year equity check incomplete: missing or ambiguous statement for ' + str(year)))
+            break
+        f = rows[0]
+        try:
+            value = Decimal(str(f.get('equity')))
+            if not value.is_finite(): raise InvalidOperation
+        except InvalidOperation:
+            warnings.append('Equity unavailable or invalid for ' + str(year))
+            break
+        if value >= 0: break
+        selected.append(f)
+    return selected
+
+
 def assess(item, reviews=None):
     reviews = reviews or {'findings': {}, 'sanctions': {}}
     reg = item['registration_number']
@@ -127,22 +157,19 @@ def assess(item, reviews=None):
             events[key]['source_id'] = 'vid_rating'
     financials = item.get('financials', [])
     if financials:
-        latest_year = max(str(f.get('year') or '') for f in financials)
-        latest = [f for f in financials if str(f.get('year') or '') == latest_year]
-        if len(latest) == 1:
-            f = latest[0]
-            try:
-                if f.get('equity') is not None and Decimal(f['equity']) < 0:
-                    key = digest([reg, 'negative_equity'])
-                    add(key, 'other_negative', 'Negative equity in latest annual statement (' + latest_year + ')',
-                        f.get('year_ended_on'), 'UR annual statements',
-                        'Equity=' + f['equity'] + '; currency=' + str(f.get('currency')) + '; scale=' + str(f.get('rounded_to_nearest')) + '; statement=' + f['statement_id'] + '; file=' + f['file_id'], 'Official financial statement')
-                    events[key]['source_id'] = 'ur_balance'
-                    events[key]['source_ids'] = ['ur_financials','ur_balance']
-            except InvalidOperation:
-                warnings.append('Invalid equity value in latest annual statement')
-        else:
-            warnings.append('Multiple latest-year financial statements; negative equity requires statement selection')
+        negative = equity_window(financials, warnings)
+        if negative:
+            f = negative[0]
+            persistent = len(negative) == 3
+            rule = 'persistent_negative_equity' if persistent else 'other_negative'
+            title = ('Negative equity for three consecutive reporting years (' + str(negative[-1]['year']) + '–' + str(f['year']) + ')'
+                if persistent else 'Negative equity in latest annual statement (' + str(f['year']) + ')')
+            key = digest([reg, 'negative_equity'])
+            for statement in negative if persistent else negative[:1]:
+                add(key, rule, title, f.get('year_ended_on'), 'UR annual statements',
+                    'Year=' + str(statement['year']) + '; equity=' + str(statement['equity']) + '; currency=' + str(statement.get('currency')) + '; scale=' + str(statement.get('rounded_to_nearest')) + '; statement=' + statement['statement_id'] + '; file=' + statement['file_id'], 'Official financial statement')
+            events[key]['source_id'] = 'ur_balance'
+            events[key]['source_ids'] = ['ur_financials','ur_balance']
     for r in item.get('sanctions_candidates', []):
         key = digest([reg, r['subject_key'], r['source'], r['entity_id']])
         # Pin confirmation to this exact run: a prior listing may no longer apply.

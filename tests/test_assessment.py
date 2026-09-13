@@ -108,6 +108,37 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(result['score'],85)
         self.assertEqual(result['events'][0]['title'],'Active legal protection proceeding')
 
+    def test_three_negative_years_one_thirty_point_event_with_all_evidence(self):
+        data=item()
+        data['financials']=[{'year':str(y),'equity':'-100','statement_id':str(y),'file_id':str(y)} for y in [2023,2025,2024,2022]]
+        result=assess(data)
+        self.assertEqual(result['score'],70)
+        self.assertEqual(len(result['events']),1)
+        event=result['events'][0]
+        self.assertEqual(event['rule'],'persistent_negative_equity')
+        self.assertEqual(len(event['evidence']),3)
+        self.assertIn('2023–2025',event['title'])
+        data['financials']=[f for f in data['financials'] if f['year']=='2025']
+        single=assess(data)['events'][0]
+        self.assertEqual(event['id'],single['id'])
+        self.assertEqual(single['penalty'],15)
+
+    def test_equity_gaps_duplicates_invalid_values_and_recovery(self):
+        base=[{'year':str(y),'equity':'-100','statement_id':str(y),'file_id':str(y)} for y in [2025,2024,2023]]
+        for bad in [None,'','NaN','Infinity','-Infinity','invalid']:
+            with self.subTest(equity=bad):
+                data=item();data['financials']=copy.deepcopy(base);data['financials'][1]['equity']=bad
+                self.assertEqual(assess(data)['score'],85)
+        for year in ['2021','2025']:
+            with self.subTest(year=year):
+                data=item();data['financials']=copy.deepcopy(base);data['financials'][1]['year']=year
+                self.assertEqual(assess(data)['score'],85 if year=='2021' else 100)
+        for recovered in ['0','100']:
+            data=item();data['financials']=copy.deepcopy(base);data['financials'][0]['equity']=recovered
+            self.assertEqual(assess(data)['score'],100)
+        data=item();data['financials']=copy.deepcopy(base);data['financials'][1]['equity']='0'
+        self.assertEqual(assess(data)['score'],85)
+
     def test_official_event_retained_on_failure_and_removed_on_success(self):
         data=item();data['quality']=[{'source':'vid_debt','status':'FOUND'}]
         data['tax_debt']=[{'query_status':'PUBLISHED_DEBT','published_debt_amount':'200','effective_date':'2026-09-09','evidence_url':'https://example.org'}]

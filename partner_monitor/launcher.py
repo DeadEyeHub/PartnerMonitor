@@ -71,7 +71,7 @@ class Launcher:
             self.sessions[token] = {'accepted':False, 'created':now}
         return token
 
-    def authorize(self, token, accepted=True):
+    def authorize(self, token, accepted=False):
         with self.lock:
             session = self.sessions.get(token)
             if not session or time.time()-session['created'] >= 86400: raise PermissionError('Reload the launcher')
@@ -157,8 +157,7 @@ class Launcher:
         args = ['docker','compose','run','--rm','-T','collector']
         if mode in {'media','full'}:
             if request.get('paid') is not True: raise ValueError('Acknowledge paid provider requests')
-            limit = len(numbers) if numbers else request.get('limit')
-            if type(limit) is not int or not 1 <= limit <= 100: raise ValueError('Company limit must be 1–100')
+            limit = 0  # All root companies; per-company provider budgets still apply.
             args += ['pipeline','--limit',str(limit)]
         elif mode == 'collect': args += ['collect']
         else: args += ['report']
@@ -288,15 +287,9 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < size <= MAX_BODY: raise ValueError('Request too large or empty')
             request = json.loads(self.rfile.read(size))
             if not isinstance(request,dict): raise ValueError('JSON object required')
-            if self.path == '/api/accept':
-                if request.get('accepted') is not True: raise ValueError('Acceptance required')
-                with app.lock: app.sessions[token]['accepted'] = True
-                self.send(200,{'accepted':True,'license_hash':app.license_hash})
-            else:
-                app.authorize(token)
-                if self.path == '/api/start': self.send(202,app.start(request))
-                elif self.path == '/api/upload': self.send(200,app.upload(request))
-                else: self.send(404,{'error':'Not found'})
+            if self.path == '/api/start': self.send(202,app.start(request))
+            elif self.path == '/api/upload': self.send(200,app.upload(request))
+            else: self.send(404,{'error':'Not found'})
         except PermissionError as exc: self.send(403,{'error':str(exc)})
         except (ValueError,TypeError,KeyError) as exc: self.send(400,{'error':str(exc)})
         except OSError: self.send(500,{'error':'Local operation failed; check Docker and folder access'})

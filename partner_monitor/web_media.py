@@ -209,12 +209,12 @@ def web_status(db, job_id):
 
 def plan_web(data_dir, run_id=None, limit=3):
     """Read-only preview of the exact company scope and bounded provider payloads."""
-    if not 1 <= limit <= 100:
-        raise ValueError('Company limit must be 1..100')
+    if not 0 <= limit <= 100:
+        raise ValueError('Company limit must be 0 (all) or 1..100')
     db = open_database(data_dir)
     try:
         run_id = resolve_run(db, run_id)
-        regs = [r[0] for r in db.execute("SELECT registration_number FROM run_companies WHERE run_id=? AND role='ROOT' ORDER BY registration_number LIMIT ?", (run_id,limit))]
+        regs = [r[0] for r in db.execute("SELECT registration_number FROM run_companies WHERE run_id=? AND role='ROOT' ORDER BY registration_number LIMIT ?", (run_id,limit or -1))]
         companies = []
         for reg in regs:
             context = company_context(db, run_id, reg)
@@ -262,7 +262,7 @@ def store_article(db, job_id, reg, result, saved):
 
 def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=True,log_dir=None):
     if mode not in {'all','search','analyze'}:raise ValueError('Invalid web mode')
-    if not 1<=limit<=100:raise ValueError('Company limit must be 1..100')
+    if not 0<=limit<=100:raise ValueError('Company limit must be 0 (all) or 1..100')
     search_key=os.getenv('TAVILY_API_KEY','').strip();llm_key=os.getenv('OPENROUTER_API_KEY','').strip()
     model=os.getenv('OPENROUTER_MODEL','openai/gpt-4.1-mini').strip()
     if mode in {'all','search','analyze'} and not search_key:raise ValueError('Set TAVILY_API_KEY in .env')
@@ -284,7 +284,7 @@ def run_web(data_dir,run_id=None,job_id=None,mode='all',limit=3,retry_errors=Tru
             regs=[r[0] for r in db.execute('SELECT registration_number FROM web_checks WHERE job_id=? ORDER BY registration_number',(job_id,))]
         else:
             run_id=resolve_run(db,run_id);job_id=uuid.uuid4().hex
-            regs=[r[0] for r in db.execute("SELECT registration_number FROM run_companies WHERE run_id=? AND role='ROOT' ORDER BY registration_number LIMIT ?",(run_id,limit))]
+            regs=[r[0] for r in db.execute("SELECT registration_number FROM run_companies WHERE run_id=? AND role='ROOT' ORDER BY registration_number LIMIT ?",(run_id,limit or -1))]
             if not regs:raise ValueError('No root companies in this run')
             with db:
                 db.execute('INSERT INTO web_jobs VALUES (?,?,?,NULL,?,?)',(job_id,run_id,utc_now(),'RUNNING',json.dumps({'prompt_version':VERSION,'model':model,'limit':limit,'max_queries':6,**limits})))

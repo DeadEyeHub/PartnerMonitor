@@ -21,12 +21,9 @@ class LauncherTests(unittest.TestCase):
         (self.root/'data/input/companies.csv').write_text('registration_number\n40000000001\n',encoding='utf-8')
         self.app=Launcher(self.root)
 
-    def test_sessions_require_acceptance_and_new_page_requires_it_again(self):
-        token=self.app.session()
-        with self.assertRaises(PermissionError):self.app.authorize(token)
-        self.app.sessions[token]['accepted']=True
-        self.app.authorize(token)
-        with self.assertRaises(PermissionError):self.app.authorize(self.app.session())
+    def test_sessions_work_without_license_acceptance(self):
+        self.app.authorize(self.app.session())
+        with self.assertRaises(PermissionError):self.app.authorize('unknown-token')
 
     def test_command_validation_and_no_shell_input(self):
         self.assertEqual(self.app.command({'mode':'report'})[-1],'report')
@@ -34,14 +31,14 @@ class LauncherTests(unittest.TestCase):
         args=self.app.command({'mode':'full','input':'companies.csv','limit':2,'paid':True})
         self.assertEqual(args[-2:],['--input','/input/companies.csv'])
         for request in [{'mode':'report','run':'a;echo secret'},{'mode':'collect','input':'../.env'},
-                        {'mode':'media','run':'a'*32,'paid':True,'limit':True}]:
+                        {'mode':'media','run':'invalid','paid':True}]:
             with self.assertRaises(ValueError):self.app.command(request)
         with self.assertRaises(ValueError):within(self.root/'data/reports','../../.env')
 
     def test_single_company_input_and_web_limit(self):
         request={'mode':'full','input_mode':'single','registration_number':' 01234567890 ','paid':True,'limit':99}
         args=self.app.command(request)
-        self.assertEqual(args[args.index('--limit')+1],'1')
+        self.assertEqual(args[args.index('--limit')+1],'0')
         with patch('partner_monitor.launcher.threading.Thread') as worker:
             self.app.start(request)
         command=worker.call_args.kwargs['args'][0]
@@ -58,7 +55,7 @@ class LauncherTests(unittest.TestCase):
         with patch('partner_monitor.launcher.threading.Thread') as worker:
             self.app.start(request)
         args=worker.call_args.kwargs['args'][0]
-        self.assertEqual(args[args.index('--limit')+1],'2')
+        self.assertEqual(args[args.index('--limit')+1],'0')
         path=self.root/'data/input'/Path(args[-1]).name
         self.assertEqual(path.read_text().splitlines(),['registration_number','01234567890','40003248848'])
 
@@ -126,9 +123,7 @@ class LauncherTests(unittest.TestCase):
             conn.request('POST',path,json.dumps(body),headers)
             response=conn.getresponse();data=response.read();status=response.status;conn.close()
             return status,json.loads(data)
-        self.assertEqual(post('/api/start',{'mode':'report'})[0],403)
-        self.assertEqual(post('/api/accept',{'accepted':True},'https://foreign.example')[0],403)
-        self.assertEqual(post('/api/accept',{'accepted':True})[0],200)
+        self.assertEqual(post('/api/start',{'mode':'report'},'https://foreign.example')[0],403)
         with patch.object(self.app,'start',return_value={'status':'RUNNING'}):
             self.assertEqual(post('/api/start',{'mode':'report'})[0],202)
         with self.assertRaises(OSError):LocalServer(('127.0.0.1',server.server_port),Handler)

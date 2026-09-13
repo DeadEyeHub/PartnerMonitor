@@ -185,6 +185,51 @@ def report(db,run_id,path):
             return '<br>'.join('<a href="'+esc(line)+'">'+esc(line)+'</a>' if line.startswith(('https://','http://')) else esc(line)
                 for line in str('' if value is None else value).split('\n'))
         return '<div class="scroll"><table><thead><tr>'+''.join('<th title="'+esc(c)+'">'+esc(display_label(c))+'</th>' for c in columns)+'</tr></thead><tbody>'+''.join('<tr>'+''.join('<td>'+cell(row.get(c))+'</td>' for c in columns)+'</tr>' for row in rows)+'</tbody></table></div>'
+    missing_rows = []
+    labels = {'UR':'Company registration details', 'VID':'VID taxpayer rating', 'VAT':'VAT registration check',
+              'Financials':'Annual financial statements', 'Tax debt':'Tax debt amount or official no-published-debt result',
+              'Sanctions':'Sanctions name screening', 'Web':'Completed news search and model analysis'}
+    actions = {'UR':'Retry the company register import and verify the registration number.',
+               'VID':'Retry VID taxpayer rating collection.', 'VAT':'Retry the VAT register check.',
+               'Financials':'Check whether annual statements were filed and retry financial collection.',
+               'Tax debt':'Retry the VID debt form or verify it manually.',
+               'Sanctions':'Refresh sanctions sources and rerun name screening.',
+               'Web':'Run news search and analysis for this company; review unresolved articles.'}
+    from .assessment import coverage
+    for reg, item in items.items():
+        name = (item.get('registry') or {}).get('name') if isinstance(item.get('registry'), dict) else None
+        name = name or payload['companies'][reg].get('name') or reg
+        for area, available in coverage(item).items():
+            if available: continue
+            reason = 'No usable result was saved for this check.'
+            if area == 'Web':
+                checks = item.get('web_checks') or []
+                reason = ('Search and analysis were not run for this collection.' if not checks else
+                    'News checking is unfinished: search ' + str(checks[0].get('search_status', 'not started')).lower().replace('_',' ') +
+                    ', analysis ' + str(checks[0].get('analysis_status', 'not started')).lower().replace('_',' ') + '.')
+            if area == 'Tax debt' and item.get('tax_debt'):
+                detail = item['tax_debt'][0].get('detail')
+                reason = {'Company name required by VID':'The VID request could not start because the legal name was missing.',
+                          'VID PDF download unavailable':'The VID certificate could not be downloaded.'}.get(detail, 'VID did not return a usable debt result; inspect the company evidence.')
+            missing_rows.append({'Company':name,'Registration number':reg,'Missing data or unfinished check':labels[area],
+                'What happened':reason,'Next step':actions[area]})
+        source_labels = {'ur_names':'Historical company names', 'ur_members':'Company owners',
+            'ur_stockholders':'Shareholders', 'ur_beneficial_owners':'Beneficial owners', 'ur_officers':'Company officers',
+            'ur_insolvency':'Insolvency and legal protection', 'ur_liquidations':'Liquidation records',
+            'ur_suspensions':'Register activity restrictions', 'ur_measures':'Registered restrictive measures',
+            'ur_sanctions':'Register sanctions records', 'ur_income':'Income statements', 'ur_balance':'Balance sheets',
+            'ur_cashflow':'Cash flow statements', 'vid_taxes':'Annual tax payments', 'vid_suspensions':'VID activity restrictions'}
+        for check in item.get('quality', []):
+            source = check.get('source')
+            if source not in source_labels or check.get('status') in {'FOUND','NO_RECORDS'}: continue
+            missing_rows.append({'Company':name,'Registration number':reg,'Missing data or unfinished check':source_labels[source],
+                'What happened':'This source check did not finish with a usable result.',
+                'Next step':'Retry official collection; if unavailable, check the original source manually.'})
+        for f in item.get('financials', [])[:3]:
+            absent = [label for key,label in [('net_income','profit after tax'),('equity','equity'),('net_turnover','revenue'),('total_assets','assets')] if f.get(key) is None]
+            if absent:
+                missing_rows.append({'Company':name,'Registration number':reg,'Missing data or unfinished check':'Financial fields ('+str(f.get('year'))+'): '+', '.join(absent),
+                    'What happened':'The imported statement does not contain these values.', 'Next step':'Verify the original annual statement.'})
     blocks = ['<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Partner Monitor — Data</title>',
       '<style>body{font:15px system-ui;margin:32px;background:#f5f7fa;color:#172435}h1,h2{color:#133b55}table{border-collapse:collapse;background:white;width:100%}td,th{padding:9px;border:1px solid #dce3ea;text-align:left;vertical-align:top}th{background:#e8eff6}details{margin:12px 0;padding:12px;background:white;border:1px solid #dce3ea}summary{cursor:pointer;font-weight:600}.scroll{overflow:auto}.muted{color:#596574}a{color:#075c9a}</style>',
       '<h1>Partner Monitoring Report</h1>',
@@ -197,7 +242,10 @@ def report(db,run_id,path):
       '<h2>Scored events</h2>',table(payload['sheets']['Findings']),
       '<h2>Changes since previous assessment</h2>',
       table(payload['sheets']['Changes']) if payload['previous_id'] else '<p>First assessment baseline. Future reports will compare scores, events and source fields against it.</p>',
-      '<h2>Data quality</h2>',table(payload['sheets']['Data Quality']),
+      '<h2>Missing data and unfinished checks</h2>',
+      '<p>These are gaps in available evidence, not findings against the company. An official check with no matching records is not treated as missing data.</p>',
+      table(missing_rows) if missing_rows else '<p>No missing data identified in the checks summarized here.</p>',
+      '<details><summary>Data coverage summary</summary>',table(payload['sheets']['Data Quality']),'</details>',
       '<h2>Sanctions Screening</h2>',
       '<p>EU, UN and Latvian lists are supplied by FID, the agreed source for this stage. File publication dates are informational: an old date alone does not make screening incomplete. Download failures, missing inputs and invalid dates still require attention.</p>',
       '<p>Names of companies, former company names, owners, shareholders, beneficial owners and officers are compared. A name candidate requires identity review. Cross-script transliteration and sectoral restrictions are not checked. Related companies are screened separately; ownership or control does not automatically transfer a result to another company.</p>',

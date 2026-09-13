@@ -21,15 +21,12 @@ docker compose build collector
 The launcher opens `http://127.0.0.1:18764`. Use `-Port 18765` if the port is occupied.
 It needs local Python 3.10 or newer; XLSX upload validation additionally needs `openpyxl`.
 Pipeline dependencies run inside Docker, and CSV uploads use the Python standard library.
-The browser agreement loads the exact repository license and appears on every new page
-load. Scroll to the end, check acceptance and continue. Escape/backdrop clicks do not
-dismiss it. No acceptance is stored permanently. The backend also rejects run/upload
-requests until that page session accepts the license; this is a local acknowledgment,
-not DRM or proof that a person actually read the text. CLI use remains subject to the license.
+The launcher opens directly without a license dialog. The repository license remains
+available through the UI link and applies to UI and CLI use.
 
 Choose saved-data reports, official collection, media analysis of a saved run, or the
 full pipeline. Upload and validate a CSV/XLSX or select one in `data/input`. Paid modes
-require a company limit and explicit cost acknowledgment. Excel uses the existing
+analyze all selected companies and require explicit cost acknowledgment. Excel uses the existing
 workspace runtime; uncheck it for HTML/CSV-only output. A live log and result links are
 shown in the UI. Only one launcher job runs at a time. Keep the launcher process open
 until it finishes; closing a browser tab does not cancel the job. The UI does not provide
@@ -401,8 +398,7 @@ records follow the existing collection rules. Select **Company file** for batch 
 
 The launcher defaults to **Create report**: collection, paid search and analysis,
 then report generation. Choose a single registration number or a company file.
-For batches, the visible web-analysis limit controls how many companies receive
-media checks. **Advanced options** contains individual processing modes, the saved
+All selected companies receive media checks, including file batches. **Advanced options** contains individual processing modes, the saved
 collection run and optional Excel export. Provider-cost acknowledgement remains
 required before paid requests.
 
@@ -423,3 +419,8 @@ including when the input contains only registration numbers.
 VID stores the validated current HTML statement even if the optional PDF download
 is unavailable; the evidence detail explicitly records that failure. Identity/date
 validation and HTML/PDF disagreement still prevent accepting an invalid result.
+
+The HTML report includes a readable **Missing data and unfinished checks** table
+with company identity, unavailable check or financial field, explanation and next step.
+The launcher uses pipeline `--limit 0` to analyze all root companies; per-company
+request budgets remain in force.

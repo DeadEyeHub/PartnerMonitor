@@ -39,7 +39,7 @@ def main():
     scope.add_argument('--job',help='Resume an existing media job and rebuild reports')
     scope.add_argument('--input',type=Path,help='Collect official data for a CSV/XLSX input first')
     workflow_parser.add_argument('--replay',help='Replay official snapshots when using --input')
-    workflow_parser.add_argument('--limit',type=int,default=3)
+    workflow_parser.add_argument('--limit',type=int,default=3,help='0: all root companies; otherwise 1..100')
     workflow_parser.add_argument('--analysis-passes',type=int,choices=range(1,4),default=3)
     workflow_parser.add_argument('--output',type=Path,default=Path(os.getenv('REPORT_DIR','data/reports'))/'latest.html')
     for command in ['status','company','report','compare']:

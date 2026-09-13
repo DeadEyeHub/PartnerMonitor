@@ -13,8 +13,8 @@ def run_workflow(data_dir, output, *, run_id=None, job_id=None, input_path=None,
         raise ValueError('Choose exactly one of --run, --job or --input')
     if replay and not input_path:
         raise ValueError('--replay requires --input')
-    if not 1 <= limit <= 100 or not 1 <= analysis_passes <= 3:
-        raise ValueError('Limit must be 1..100 and analysis passes 1..3')
+    if not 0 <= limit <= 100 or not 1 <= analysis_passes <= 3:
+        raise ValueError('Limit must be 0 (all) or 1..100 and analysis passes 1..3')
     # Validate before an expensive collection starts. Never return key values.
     for name in ('TAVILY_API_KEY','OPENROUTER_API_KEY'):
         if not os.getenv(name,'').strip():

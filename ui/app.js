@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name=session-token]').content;
-let accepted = false, reachedEnd = false, busy = false, runInitialized = false;
+let busy = false, runInitialized = false;
 const companyNumbers=[];
 async function api(path, body) {
   const response = await fetch(path,{method:body ? 'POST':'GET',headers:{'X-Session':token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
@@ -9,7 +9,7 @@ async function api(path, body) {
   if (!response.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
-const descriptions = {report:'Regenerate scores and reports using saved evidence. No paid provider calls.',collect:'Download current official records for the selected company or file, then build reports.',media:'Use the selected saved collection and run fresh Tavily searches and model analysis.',full:'Collect official records for the selected company or file, then search and analyze up to the specified web company limit.'};
+const descriptions = {report:'Regenerate scores and reports using saved evidence. No paid provider calls.',collect:'Download current official records for the selected company or file, then build reports.',media:'Use the selected saved collection and run fresh Tavily searches and model analysis.',full:'Collect official records for the selected company or file, then search and analyze every selected company.'};
 function inputChanged() {
   const collecting=['collect','full'].includes($('mode').value);
   const single=$('inputMode').value==='single', list=$('inputMode').value==='list';
@@ -18,10 +18,6 @@ function inputChanged() {
   $('listNumber').disabled=!(collecting&&list);
   $('registrationNumber').required=collecting&&single;
   $('registrationNumber').disabled=!(collecting&&single);
-  $('limitGroup').hidden=collecting&&(single||list);
-  $('limit').readOnly=collecting&&single;
-  $('limit').disabled=!['media','full'].includes($('mode').value);
-  if(collecting&&single)$('limit').value=1;
 }
 function renderCompanies(){
   $('companyList').replaceChildren(...companyNumbers.map(number=>{
@@ -53,29 +49,6 @@ function modeChanged() {
   $('paid').checked=false;inputChanged();
 }
 $('mode').addEventListener('change',modeChanged);modeChanged();
-const dialog=$('licenseDialog');dialog.showModal();
-dialog.addEventListener('cancel',event=>event.preventDefault());
-dialog.addEventListener('close',()=>{if(!accepted)dialog.showModal();});
-document.addEventListener('keydown',event=>{
-  if(dialog.open && event.key==='Escape'){event.preventDefault();event.stopPropagation();}
-},true);
-$('licenseText').addEventListener('scroll',()=>{
-  const text=$('licenseText'),max=text.scrollHeight-text.clientHeight;
-  const percent=max>0?Math.min(100,Math.round(text.scrollTop/max*100)):100;
-  $('readProgress').value=percent;$('scrollPercent').textContent=percent+'%';
-  if (max>0 && text.scrollTop+text.clientHeight>=text.scrollHeight-3) {
-    reachedEnd=true;$('agree').disabled=false;$('scrollHint').textContent='End reached. Confirm your agreement to continue.';
-  }
-});
-$('agree').addEventListener('change',()=>{$('accept').disabled=!(reachedEnd && $('agree').checked);});
-$('accept').addEventListener('click',async()=>{
-  if (!reachedEnd || !$('agree').checked) return;
-  try {await api('/api/accept',{accepted:true});accepted=true;dialog.close();$('controls').disabled=busy;($('inputGroup').hidden?$('advanced'):$('inputMode')).focus();}
-  catch(error){$('licenseError').textContent=error.message;}
-});
-fetch('/LICENSE.md').then(r=>{if(!r.ok)throw new Error('Unable to load license');return r.text();})
-  .then(text=>{$('licenseText').textContent=text;$('licenseText').focus();})
-  .catch(error=>{$('licenseText').textContent=error.message;});
 $('upload').addEventListener('change',async()=>{
   const file=$('upload').files[0];if(!file)return;
   if(file.size>5*1024*1024){$('uploadResult').textContent='File exceeds 5 MB.';return;}
@@ -87,14 +60,14 @@ $('upload').addEventListener('change',async()=>{
 });
 $('launchForm').addEventListener('submit',async event=>{
   event.preventDefault();$('error').textContent='';
-  if(!accepted || busy)return;
+  if(busy)return;
   try {
     if(['collect','full'].includes($('mode').value)&&$('inputMode').value==='list'){
       if($('listNumber').value.trim())throw new Error('Click Add company to include the entered number, or clear it.');
       if(!companyNumbers.length)throw new Error('Add at least one company to the list.');
     }
     $('start').disabled=true;
-    await api('/api/start',{mode:$('mode').value,input:$('input').value,input_mode:$('inputMode').value,registration_number:$('registrationNumber').value.trim(),registration_numbers:companyNumbers,run:$('run').value.trim(),limit:Number($('limit').value),paid:$('paid').checked,excel:$('excel').checked});
+    await api('/api/start',{mode:$('mode').value,input:$('input').value,input_mode:$('inputMode').value,registration_number:$('registrationNumber').value.trim(),registration_numbers:companyNumbers,run:$('run').value.trim(),paid:$('paid').checked,excel:$('excel').checked});
     await refresh();
   }catch(error){$('error').textContent=error.message;}
   finally{$('start').disabled=busy;}
@@ -114,7 +87,7 @@ async function refresh(){
     }
     const labels={'latest.html':'Open full report','latest.csv':'Download compact CSV','latest.xlsx':'Download Excel workbook'};
     $('artifacts').replaceChildren(...data.artifacts.map(name=>{const a=document.createElement('a');a.href='/reports/'+name;a.target='_blank';a.rel='noopener';a.textContent=labels[name];return a;}));
-    const job=data.job;busy=job?.status==='RUNNING';$('controls').disabled=!accepted||busy;$('start').disabled=busy;
+    const job=data.job;busy=job?.status==='RUNNING';$('controls').disabled=busy;$('start').disabled=busy;
     $('jobStatus').textContent=job?.status||'Idle';$('jobStatus').dataset.state=job?.status||'IDLE';
     $('stage').textContent=job?job.stage+' · '+job.started_at:'Ready to start.';
     if(data.log && $('log').textContent!==data.log){$('log').textContent=data.log;if($('follow').checked)$('log').scrollTop=$('log').scrollHeight;}

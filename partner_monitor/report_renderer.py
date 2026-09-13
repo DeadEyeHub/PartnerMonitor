@@ -78,7 +78,7 @@ def render_report(db,run_id,path,baseline=None):
       table(screening_rows(data['sanctions_screening'])) if data['sanctions_screening'] else '<p>Not performed for this run.</p>',
       '<details><summary>Source dates and import details</summary>',
       table([{k:v for k,v in r.items() if k in {'source','status','rows_imported','retrieved_at','source_as_of','detail'}} for r in data['sources']]),'</details>',
-      '<h2>Company Evidence</h2>']
+      '<details><summary>Technical details and company evidence</summary>']
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_jobs'").fetchone():
         jobs=[dict(r) for r in db.execute('SELECT job_id,created_at,finished_at,status FROM web_jobs WHERE run_id=? ORDER BY created_at DESC,rowid DESC',(run_id,))]
         from .web_logging import export_log
@@ -87,15 +87,16 @@ def render_report(db,run_id,path,baseline=None):
             if (data_dir/'raw/web_logs'/(job['job_id']+'.jsonl')).exists():
                 log_path=export_log(data_dir,job['job_id'],path.parent)
                 log_links.append('<li><a href="'+esc(log_path.relative_to(path.parent).as_posix())+'">Tavily and model log — '+esc(job['job_id'])+'</a></li>')
-        blocks[-1:-1]=['<h2>Adverse Media Jobs</h2>',
-          '<p>Each company card shows its latest web job for this official-data run. Previously scored media events are retained until explicitly excluded. Failed or limited searches do not establish absence of adverse information.</p>',table(jobs)]
-        if log_links:blocks[-1:-1]=['<ul>'+''.join(log_links)+'</ul>']
+        blocks.extend(['<h2>Adverse Media Jobs</h2>',
+          '<p>Each company card shows its latest web job for this official-data run. Previously scored media events are retained until explicitly excluded. Failed or limited searches do not establish absence of adverse information.</p>',table(jobs)])
+        if log_links:blocks.append('<ul>'+''.join(log_links)+'</ul>')
     for row in data['companies']:
         reg = row['registration_number']
         item = dict(items[reg])
         blocks.append('<details><summary>'+esc(reg)+' — '+esc(row['name'] or 'Not found in UR')+' ('+esc(row['role'])+')</summary>')
         assessment=payload['companies'][reg]['assessment']
-        blocks.append('<p><strong>'+str(assessment['score'])+'/100 · '+esc(assessment['recommendation'])+'</strong></p><p>'+esc(assessment['reason'])+'</p>')
+        if row['role'] != 'ROOT':
+            blocks.append('<p><strong>'+str(assessment['score'])+'/100 · '+esc(assessment['recommendation'])+'</strong></p>')
         if assessment['warnings']:
             blocks.append('<ul>'+''.join('<li>'+esc(w)+'</li>' for w in assessment['warnings'])+'</ul>')
         blocks.append(table(item.pop('quality')))
@@ -113,7 +114,7 @@ def render_report(db,run_id,path,baseline=None):
                     blocks.append('<p><a href="'+esc(evidence_links[reg])+'">Download official VID PDF</a></p>')
                 blocks.append('</details>')
         blocks.append('</details>')
-    blocks.append('</html>')
+    blocks.append('</details></html>')
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text('\n'.join(blocks),encoding='utf-8')
     archive = path.parent/('report-'+payload['id']+'.html')

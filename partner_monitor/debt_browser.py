@@ -100,6 +100,7 @@ def collect_browser(companies, data_dir):
                 reg = company['registration_number']
                 item = {'registration_number':reg,'effective_date':effective.isoformat(),
                         'retrieved_at':datetime.now(ZoneInfo('UTC')).isoformat()}
+                row = None
                 try:
                     if not company.get('name'):
                         raise ValueError('Company name required by VID')
@@ -141,7 +142,11 @@ def collect_browser(companies, data_dir):
                     rows[reg] = row
                     item['status'] = row['query_status']
                 except Exception as exc:
-                    item['status'] = 'NOT_CHECKED'
+                    if row is not None and isinstance(exc, ValueError) and str(exc) == 'VID PDF download unavailable':
+                        rows[reg] = row
+                        item['status'] = row['query_status']
+                    else:
+                        item['status'] = 'NOT_CHECKED'
                     item['reason'] = str(exc) if isinstance(exc,ValueError) else type(exc).__name__
                 evidence.append(item)
                 print(f"vid_debt: {reg} {item['status']} {item.get('reason','')}",flush=True)

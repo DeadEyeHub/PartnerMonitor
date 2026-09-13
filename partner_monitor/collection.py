@@ -128,8 +128,14 @@ def collect(input_path, data_dir, selected=None, replay_run=None, ownership_dept
                             replay({'id':kind},data_dir,{kind:artifact[kind]})
                 debt_file = data_dir/verified['path']
                 debt_replay_metadata = replay_debt
+            # VID requires the legal name even when the UI input contains only a number.
+            debt_companies = []
+            for company in companies:
+                record = db.execute('SELECT name FROM registry WHERE run_id=? AND registration_number=?',
+                    (run_id, company['registration_number'])).fetchone()
+                debt_companies.append({**company, 'name': record['name'] if record and record['name'] else company.get('name')})
             with db:
-                import_debt(db,run_id,companies,data_dir,debt_file,probe=not bool(replay_run) or refresh_debt,
+                import_debt(db,run_id,debt_companies,data_dir,debt_file,probe=not bool(replay_run) or refresh_debt,
                             replay_metadata=debt_replay_metadata)
             debt_meta = db.execute("SELECT metadata_json FROM source_snapshots WHERE run_id=? AND source='vid_debt'",(run_id,)).fetchone()
             if debt_meta:

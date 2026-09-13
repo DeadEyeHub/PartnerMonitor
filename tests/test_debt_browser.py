@@ -32,6 +32,10 @@ class DebtBrowserTests(unittest.TestCase):
             with self.subTest(text=text,reg=reg,day=day),self.assertRaises(ValueError):
                 parse_result(text,reg,day)
 
+    def test_current_debt_is_not_replaced_by_component_amounts(self):
+        text=PREFIX+'ir VID administrēto nodokļu (nodevu) parāds 7302.15 euro apmērā, tai skaitā: parāda summa 0.00 euro; parāda summa 7302.15 euro.'
+        self.assertEqual(parse_result(text,REG,DAY)['published_debt_amount'],'7302.15')
+
     def test_pdf_spacing_and_decimal_threshold(self):
         row = parse_result(NO_DEBT.replace('gada','gada\n').replace('150 euro','150.00 euro'),REG,DAY)
         self.assertIsNone(row['published_debt_amount'])

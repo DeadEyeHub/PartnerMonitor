@@ -1,7 +1,15 @@
 {
-  "version": "risk-v1.1.0",
+  "version": "risk-v1.2.0",
   "start_score": 100,
   "minimum_score": 0,
   "not_recommended_below": 70,
-  "weights": {"sanctions": 100, "cartel": 30, "court_dispute": 5, "other_negative": 15, "persistent_negative_equity": 30}
+  "weights": {
+    "sanctions": 100,
+    "cartel": 30,
+    "court_dispute": 5,
+    "other_negative": 15,
+    "persistent_negative_equity": 30,
+    "two_year_negative_equity": 20,
+    "large_annual_loss": 50
+  }
 }

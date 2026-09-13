@@ -123,6 +123,26 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(event['id'],single['id'])
         self.assertEqual(single['penalty'],15)
 
+    def test_two_year_equity_and_large_loss_threshold(self):
+        data=item()
+        data['financials']=[{'year':str(y),'equity':('-10' if y>2023 else '10'),
+            'net_income':'-50000','currency':'EUR','rounded_to_nearest':'ONES',
+            'statement_id':str(y),'file_id':str(y)} for y in [2025,2024,2023]]
+        self.assertEqual(assess(data)['score'],80)
+        data['financials'][1]['net_income']='-50000.01'
+        self.assertEqual(assess(data)['score'],30)
+        data['financials'][0]['net_income']='-60000'
+        result=assess(data)
+        self.assertEqual(result['score'],30)
+        self.assertEqual(len([e for e in result['events'] if e['rule']=='large_annual_loss']),1)
+        for row in data['financials']:row['net_income']='0'
+        data['financials'].append({**data['financials'][0],'year':'2022','net_income':'-90000'})
+        self.assertEqual(assess(data)['score'],80)
+        data['financials'][0].update(net_income='-51',rounded_to_nearest='THOUSANDS')
+        self.assertEqual(assess(data)['score'],30)
+        data['financials'][0]['currency']='LVL'
+        self.assertEqual(assess(data)['score'],80)
+
     def test_equity_gaps_duplicates_invalid_values_and_recovery(self):
         base=[{'year':str(y),'equity':'-100','statement_id':str(y),'file_id':str(y)} for y in [2025,2024,2023]]
         for bad in [None,'','NaN','Infinity','-Infinity','invalid']:

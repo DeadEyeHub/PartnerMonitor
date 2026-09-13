@@ -160,16 +160,41 @@ def assess(item, reviews=None):
         negative = equity_window(financials, warnings)
         if negative:
             f = negative[0]
-            persistent = len(negative) == 3
-            rule = 'persistent_negative_equity' if persistent else 'other_negative'
-            title = ('Negative equity for three consecutive reporting years (' + str(negative[-1]['year']) + '–' + str(f['year']) + ')'
-                if persistent else 'Negative equity in latest annual statement (' + str(f['year']) + ')')
+            rule = {1:'other_negative', 2:'two_year_negative_equity', 3:'persistent_negative_equity'}[len(negative)]
+            title = ('Negative equity for ' + str(len(negative)) + ' consecutive reporting years (' + str(negative[-1]['year']) + '–' + str(f['year']) + ')'
+                if len(negative) > 1 else 'Negative equity in latest annual statement (' + str(f['year']) + ')')
             key = digest([reg, 'negative_equity'])
-            for statement in negative if persistent else negative[:1]:
+            for statement in negative:
                 add(key, rule, title, f.get('year_ended_on'), 'UR annual statements',
                     'Year=' + str(statement['year']) + '; equity=' + str(statement['equity']) + '; currency=' + str(statement.get('currency')) + '; scale=' + str(statement.get('rounded_to_nearest')) + '; statement=' + statement['statement_id'] + '; file=' + statement['file_id'], 'Official financial statement')
             events[key]['source_id'] = 'ur_balance'
             events[key]['source_ids'] = ['ur_financials','ur_balance']
+    years = {}
+    for f in financials:
+        if re.fullmatch(r'[1-9][0-9]{3}', str(f.get('year', ''))):
+            years.setdefault(int(f['year']), []).append(f)
+    for year in range(max(years), max(years)-3, -1) if years else []:
+        rows = years.get(year, [])
+        if len(rows) != 1:
+            warnings.append('Annual loss check: missing or ambiguous statement for ' + str(year))
+            continue
+        f = rows[0]
+        factor = {'ONES':1, 'THOUSANDS':1000, 'MILLIONS':1000000}.get(f.get('rounded_to_nearest'))
+        try:
+            if f.get('currency') != 'EUR' or factor is None: raise InvalidOperation
+            amount = Decimal(str(f.get('net_income'))) * factor
+            if not amount.is_finite(): raise InvalidOperation
+        except InvalidOperation:
+            warnings.append('Annual loss unavailable in EUR for ' + str(year))
+            continue
+        if amount < -50000:
+            key = digest([reg, 'large_annual_loss'])
+            add(key, 'large_annual_loss', 'Annual loss above EUR 50,000 within the latest three reporting years',
+                f.get('year_ended_on'), 'UR annual statements',
+                'Year=' + str(year) + '; net income EUR=' + str(amount) + '; statement=' + str(f.get('statement_id')) + '; file=' + str(f.get('file_id')),
+                'Official financial statement')
+            events[key]['source_id'] = 'ur_income'
+            events[key]['source_ids'] = ['ur_financials', 'ur_income']
     for r in item.get('sanctions_candidates', []):
         key = digest([reg, r['subject_key'], r['source'], r['entity_id']])
         # Pin confirmation to this exact run: a prior listing may no longer apply.

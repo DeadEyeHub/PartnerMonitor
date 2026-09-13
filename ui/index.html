@@ -8,18 +8,20 @@
   <div class="intro"><p class="eyebrow">COLLECT · ANALYZE · REVIEW</p><h1>Run your next assessment.</h1><p>Official records, adverse media and traceable scores in one local workspace.</p></div>
   <section class="metrics" aria-label="Latest assessment"><div><span>Companies in overview</span><strong id="companyCount">—</strong></div><div><span>Not recommended</span><strong id="riskCount">—</strong></div><div><span>Latest methodology</span><strong id="version">—</strong></div></section>
   <div class="columns">
-  <section class="card"><h2>Launch workflow</h2><p class="muted">Docker Desktop must be running. Credentials stay in your local .env file.</p>
+  <section class="card"><h2>Create a report</h2><p class="muted">Enter a company or upload a list. We collect official records, analyze adverse media and prepare your report.</p>
   <form id="launchForm"><fieldset id="controls" disabled>
-    <label for="mode">What would you like to run?</label><select id="mode"><option value="report">Rebuild reports from saved data</option><option value="collect">Collect official data + reports</option><option value="media">Search and analyze saved companies + reports</option><option value="full">Full pipeline: collection, search, analysis + reports</option></select>
-    <p id="modeHelp" class="note"></p>
     <div id="inputGroup" hidden>
       <label for="inputMode">Company input</label><select id="inputMode"><option value="single">Single company by registration number</option><option value="file">Company file</option></select>
       <div id="singleGroup"><label for="registrationNumber">Registration number</label><input id="registrationNumber" type="text" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" placeholder="40003248848" autocomplete="off"><p class="muted">Enter the 11-digit Latvian registration number. The company name is retrieved from official records. Web analysis covers this company only; related official records remain included.</p></div>
       <div id="fileGroup" hidden><label for="input">Company file</label><div class="fileRow"><select id="input"></select><label class="upload" for="upload">Upload file</label><input id="upload" type="file" accept=".csv,.xlsx" hidden></div><p class="muted">CSV or XLSX · up to 5 MB · required column: registration_number</p><p id="uploadResult" role="status"></p></div></div>
+    <div id="paidGroup" hidden><div id="limitGroup"><label for="limit">Maximum companies for web analysis</label><input id="limit" type="number" value="2" min="1" max="100"></div><label class="check"><input id="paid" type="checkbox">I understand this starts paid search and model requests.</label><p class="muted">Request budgets apply per company. They do not guarantee a fixed bill. A new run performs fresh searches.</p></div>
+    <details id="advanced"><summary>Advanced options</summary>
+    <label for="mode">Processing mode</label><select id="mode"><option value="report">Rebuild reports from saved data</option><option value="collect">Collect official data + reports</option><option value="media">Search and analyze saved companies + reports</option><option value="full" selected>Full pipeline: collection, search, analysis + reports</option></select>
     <div id="runGroup"><label for="run">Official collection run</label><input id="run" placeholder="Leave blank for latest collection" autocomplete="off"><p class="muted">Pre-filled from the latest report when available.</p></div>
-    <div id="paidGroup" hidden><label for="limit">Maximum companies for web analysis</label><input id="limit" type="number" value="2" min="1" max="100"><label class="check"><input id="paid" type="checkbox">I understand this starts paid search and model requests.</label><p class="muted">Request budgets apply per company. They do not guarantee a fixed bill. A new run performs fresh searches.</p></div>
     <label class="check"><input id="excel" type="checkbox" checked>Also export the six-sheet Excel workbook</label>
-    <button class="primary" id="start" type="submit">Start workflow</button><p id="error" role="alert"></p>
+    <p class="muted">Docker Desktop must be running. Credentials stay in your local .env file.</p></details>
+    <p id="modeHelp" class="note" hidden></p>
+    <button class="primary" id="start" type="submit">Create report</button><p id="error" role="alert"></p>
   </fieldset></form></section>
   <section class="card results"><div class="sectionHead"><h2>Latest results</h2><span id="jobStatus" class="status">Idle</span></div><p id="assessmentDate" class="muted">No assessment loaded.</p><div id="artifacts" class="artifacts"></div><p class="note">Scores with incomplete checks remain provisional. Review each company's evidence and coverage before drawing conclusions.</p><div class="separator"></div><h3>Execution</h3><p id="stage">Ready to start.</p><p class="muted">Only one workflow runs at a time. Closing this browser tab does not cancel a running job. Keep the launcher process open until it finishes.</p><a href="/LICENSE.md" target="_blank" rel="noopener">Read or save the license agreement</a></section>
   </div>

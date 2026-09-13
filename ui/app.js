@@ -15,7 +15,9 @@ function inputChanged() {
   $('singleGroup').hidden=!single;$('fileGroup').hidden=single;
   $('registrationNumber').required=collecting&&single;
   $('registrationNumber').disabled=!(collecting&&single);
+  $('limitGroup').hidden=collecting&&single;
   $('limit').readOnly=collecting&&single;
+  $('limit').disabled=!['media','full'].includes($('mode').value);
   if(collecting&&single)$('limit').value=1;
 }
 $('inputMode').addEventListener('change',inputChanged);
@@ -25,6 +27,8 @@ function modeChanged() {
   $('runGroup').hidden=['collect','full'].includes(mode);
   $('paidGroup').hidden=!['media','full'].includes(mode);
   $('modeHelp').textContent=descriptions[mode];
+  $('modeHelp').hidden=mode==='full';
+  $('start').textContent=mode==='full'?'Create report':'Run selected step';
   $('paid').checked=false;inputChanged();
 }
 $('mode').addEventListener('change',modeChanged);modeChanged();
@@ -45,7 +49,7 @@ $('licenseText').addEventListener('scroll',()=>{
 $('agree').addEventListener('change',()=>{$('accept').disabled=!(reachedEnd && $('agree').checked);});
 $('accept').addEventListener('click',async()=>{
   if (!reachedEnd || !$('agree').checked) return;
-  try {await api('/api/accept',{accepted:true});accepted=true;dialog.close();$('controls').disabled=busy;$('mode').focus();}
+  try {await api('/api/accept',{accepted:true});accepted=true;dialog.close();$('controls').disabled=busy;($('inputGroup').hidden?$('advanced'):$('inputMode')).focus();}
   catch(error){$('licenseError').textContent=error.message;}
 });
 fetch('/LICENSE.md').then(r=>{if(!r.ok)throw new Error('Unable to load license');return r.text();})

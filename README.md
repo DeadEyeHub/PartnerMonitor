@@ -398,3 +398,10 @@ registration number. No spreadsheet or company name is required. The launcher sa
 a one-row input CSV locally, collects official records, and generates the usual reports.
 Full pipeline performs paid web analysis for exactly one root company; related official
 records follow the existing collection rules. Select **Company file** for batch processing.
+
+The launcher defaults to **Create report**: collection, paid search and analysis,
+then report generation. Choose a single registration number or a company file.
+For batches, the visible web-analysis limit controls how many companies receive
+media checks. **Advanced options** contains individual processing modes, the saved
+collection run and optional Excel export. Provider-cost acknowledgement remains
+required before paid requests.

@@ -3,7 +3,43 @@
 Collect official data about Latvian companies in SQLite. The first stage covers
 fact ingestion, run history, source quality checks, and result inspection.
 Sanctions name screening produces review candidates. Adverse-media search and LLM
-extraction are implemented; the final risk engine remains a later stage.
+extraction, deterministic risk scoring and final reports are implemented.
+
+## Local launcher and noncommercial license
+
+This product is licensed for **noncommercial use only** under [LICENSE.md](LICENSE.md).
+Commercial internal screening, paid reports and hosted commercial services are not permitted
+under this license. Third-party components and source data retain their own terms.
+
+On Windows, start Docker Desktop, build the collector after code updates, then run:
+
+```powershell
+docker compose build collector
+./scripts/Start-UI.ps1
+```
+
+The launcher opens `http://127.0.0.1:18764`. Use `-Port 18765` if the port is occupied.
+It needs local Python 3.10 or newer; XLSX upload validation additionally needs `openpyxl`.
+Pipeline dependencies run inside Docker, and CSV uploads use the Python standard library.
+The browser agreement loads the exact repository license and appears on every new page
+load. Scroll to the end, check acceptance and continue. Escape/backdrop clicks do not
+dismiss it. No acceptance is stored permanently. The backend also rejects run/upload
+requests until that page session accepts the license; this is a local acknowledgment,
+not DRM or proof that a person actually read the text. CLI use remains subject to the license.
+
+Choose saved-data reports, official collection, media analysis of a saved run, or the
+full pipeline. Upload and validate a CSV/XLSX or select one in `data/input`. Paid modes
+require a company limit and explicit cost acknowledgment. Excel uses the existing
+workspace runtime; uncheck it for HTML/CSV-only output. A live log and result links are
+shown in the UI. Only one launcher job runs at a time. Keep the launcher process open
+until it finishes; closing a browser tab does not cancel the job. The UI does not provide
+process cancellation or manage workflows started independently through the CLI.
+
+The server binds only to loopback, checks request origins and page-session tokens,
+and exposes only approved report file types, not `.env` or the database. Credentials
+remain local. Redacted execution logs are stored under `data/reports/launcher-logs`.
+The Excel link is shown only when its embedded assessment ID matches the current report.
+The Docker images also include the agreement at `/LICENSE.md`.
 
 ## Run and inspect
 

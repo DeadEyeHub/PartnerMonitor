@@ -1,0 +1,84 @@
+'use strict';
+const $ = id => document.getElementById(id);
+const token = document.querySelector('meta[name=session-token]').content;
+let accepted = false, reachedEnd = false, busy = false, runInitialized = false;
+async function api(path, body) {
+  const response = await fetch(path,{method:body ? 'POST':'GET',headers:{'X-Session':token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+const descriptions = {report:'Regenerate scores and reports using saved evidence. No paid provider calls.',collect:'Download current official records for every company in the selected file, then build reports.',media:'Use the selected saved collection and run fresh Tavily searches and model analysis.',full:'Collect official records for the selected file, then search and analyze up to the specified web company limit.'};
+function modeChanged() {
+  const mode=$('mode').value;
+  $('inputGroup').hidden=!['collect','full'].includes(mode);
+  $('runGroup').hidden=['collect','full'].includes(mode);
+  $('paidGroup').hidden=!['media','full'].includes(mode);
+  $('modeHelp').textContent=descriptions[mode];
+  $('paid').checked=false;
+}
+$('mode').addEventListener('change',modeChanged);modeChanged();
+const dialog=$('licenseDialog');dialog.showModal();
+dialog.addEventListener('cancel',event=>event.preventDefault());
+dialog.addEventListener('close',()=>{if(!accepted)dialog.showModal();});
+document.addEventListener('keydown',event=>{
+  if(dialog.open && event.key==='Escape'){event.preventDefault();event.stopPropagation();}
+},true);
+$('licenseText').addEventListener('scroll',()=>{
+  const text=$('licenseText'),max=text.scrollHeight-text.clientHeight;
+  const percent=max>0?Math.min(100,Math.round(text.scrollTop/max*100)):100;
+  $('readProgress').value=percent;$('scrollPercent').textContent=percent+'%';
+  if (max>0 && text.scrollTop+text.clientHeight>=text.scrollHeight-3) {
+    reachedEnd=true;$('agree').disabled=false;$('scrollHint').textContent='End reached. Confirm your agreement to continue.';
+  }
+});
+$('agree').addEventListener('change',()=>{$('accept').disabled=!(reachedEnd && $('agree').checked);});
+$('accept').addEventListener('click',async()=>{
+  if (!reachedEnd || !$('agree').checked) return;
+  try {await api('/api/accept',{accepted:true});accepted=true;dialog.close();$('controls').disabled=busy;$('mode').focus();}
+  catch(error){$('licenseError').textContent=error.message;}
+});
+fetch('/LICENSE.md').then(r=>{if(!r.ok)throw new Error('Unable to load license');return r.text();})
+  .then(text=>{$('licenseText').textContent=text;$('licenseText').focus();})
+  .catch(error=>{$('licenseText').textContent=error.message;});
+$('upload').addEventListener('change',async()=>{
+  const file=$('upload').files[0];if(!file)return;
+  if(file.size>5*1024*1024){$('uploadResult').textContent='File exceeds 5 MB.';return;}
+  try {
+    const content=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);});
+    const result=await api('/api/upload',{name:file.name,content});
+    await refresh();$('input').value=result.name;$('uploadResult').textContent=result.companies+' companies validated and saved.';
+  }catch(error){$('uploadResult').textContent=error.message;}
+});
+$('launchForm').addEventListener('submit',async event=>{
+  event.preventDefault();$('error').textContent='';
+  if(!accepted || busy)return;
+  try {
+    $('start').disabled=true;
+    await api('/api/start',{mode:$('mode').value,input:$('input').value,run:$('run').value.trim(),limit:Number($('limit').value),paid:$('paid').checked,excel:$('excel').checked});
+    await refresh();
+  }catch(error){$('error').textContent=error.message;}
+  finally{$('start').disabled=busy;}
+});
+async function refresh(){
+  try{
+    const data=await api('/api/status');
+    const selected=$('input').value;
+    if(JSON.stringify([...$('input').options].map(o=>o.value))!==JSON.stringify(data.inputs)){
+      $('input').replaceChildren(...data.inputs.map(name=>new Option(name,name)));
+      if(data.inputs.includes(selected))$('input').value=selected;
+    }
+    if(data.summary){
+      $('companyCount').textContent=data.summary.companies;$('riskCount').textContent=data.summary.not_recommended;$('version').textContent=data.summary.methodology;
+      $('assessmentDate').textContent='Generated '+new Date(data.summary.date).toLocaleString();
+      if(!runInitialized){$('run').value=data.summary.run_id;runInitialized=true;}
+    }
+    const labels={'latest.html':'Open full report','latest.csv':'Download compact CSV','latest.xlsx':'Download Excel workbook'};
+    $('artifacts').replaceChildren(...data.artifacts.map(name=>{const a=document.createElement('a');a.href='/reports/'+name;a.target='_blank';a.rel='noopener';a.textContent=labels[name];return a;}));
+    const job=data.job;busy=job?.status==='RUNNING';$('controls').disabled=!accepted||busy;$('start').disabled=busy;
+    $('jobStatus').textContent=job?.status||'Idle';$('jobStatus').dataset.state=job?.status||'IDLE';
+    $('stage').textContent=job?job.stage+' · '+job.started_at:'Ready to start.';
+    if(data.log && $('log').textContent!==data.log){$('log').textContent=data.log;if($('follow').checked)$('log').scrollTop=$('log').scrollHeight;}
+  }catch(error){$('stage').textContent='Launcher connection unavailable: '+error.message;}
+}
+refresh();setInterval(refresh,2000);

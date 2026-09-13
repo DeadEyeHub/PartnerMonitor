@@ -6,6 +6,7 @@ RUN apk add --no-cache sqlite \
     && mkdir -p /data \
     && chown monitor:monitor /data
 
+COPY LICENSE.md /LICENSE.md
 USER monitor
 WORKDIR /data
 

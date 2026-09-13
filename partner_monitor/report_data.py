@@ -8,6 +8,7 @@ from .assessment import assess, digest, finish, load_reviews, VERSION, RULES
 from .overview import FIELDS
 from .sources import load_sources
 from .web_logging import atomic_text
+from .change_labels import record_label, values as change_values
 
 HEADERS = {
     'Overview': FIELDS,
@@ -86,7 +87,7 @@ def build_report(db, run_id, companies, load_company, directory, baseline=None):
         if not re.fullmatch(r'[a-f0-9]{24}', baseline): raise ValueError('Invalid baseline assessment')
         previous = json.loads((directory/'assessments'/(baseline+'.json')).read_text(encoding='utf-8'))
         if previous['version'] != VERSION: raise ValueError('Baseline uses different scoring rules; choose a report with the current methodology')
-    input_id = digest([RULES, run_id, items, reviews, baseline]) if baseline else digest([RULES, run_id, items, reviews])
+    input_id = digest([RULES, run_id, items, reviews, baseline, 'report-v2'])
     history = directory / 'assessments'
     target = history / (input_id + '.json')
     if target.exists():
@@ -143,18 +144,19 @@ def build_report(db, run_id, companies, load_company, directory, baseline=None):
             current_events = {e['id']: e for e in assessment['events']}
             for e in before['assessment']['events']:
                 if e['id'] not in current_events:
-                    change('Event no longer scored: ' + e['id'], e['title'], 'Not scored in current assessment; see evidence/review')
+                    change('Event no longer scored', e['title'], 'Not scored in current assessment; see evidence/review')
                 elif e['title'] != current_events[e['id']]['title']:
-                    change('Event details: ' + e['id'], e['title'], current_events[e['id']]['title'])
+                    change('Updated event', e['title'], current_events[e['id']]['title'])
             for e in assessment['events']:
-                if e['id'] not in old_events: change('New event: ' + e['id'], None, e['title'])
+                if e['id'] not in old_events: change('New adverse event', None, e['title'])
             for key in sorted(before['facts'].keys() | current_facts.keys()):
                 source = source_map.get(key.split(':')[0])
                 available = {'FOUND', 'NO_RECORDS'}
                 if current_checks.get(source) not in available or before['checks'].get(source) not in available: continue
                 old = before['facts'].get(key, {}); current = current_facts.get(key, {})
-                for field in sorted(old.keys() | current.keys()):
-                    change(key + ':' + field, old.get(field), current.get(field))
+                fields=[field for field in sorted(old.keys() | current.keys()) if old.get(field)!=current.get(field)]
+                if fields:
+                    change(record_label(key.split(':')[0],old,current),change_values(old,fields),change_values(current,fields))
         metrics = {}
         for m in item.get('financial_metrics', []):
             metrics.setdefault((m['statement_id'], m['file_id']), []).append(m['metric'] + '=' + (m['value'] if m['value'] is not None else m['status']))

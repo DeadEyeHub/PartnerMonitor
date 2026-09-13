@@ -1,0 +1,127 @@
+import copy
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from partner_monitor.assessment import assess, finding_key, digest, load_reviews
+from partner_monitor.report_data import build_report, numeric
+
+
+def item(findings=()):
+    return {'registration_number':'40000000001','run_id':'r', 'quality':[],
+        'web_checks':[{'search_status':'COMPLETED','analysis_status':'COMPLETED'}],
+        'web_findings':list(findings), 'financials':[], 'tax_debt':[]}
+
+
+def finding(kind='regulatory', text='A cartel fine was imposed.', quote='Exact supporting source quotation', date='2021-07-30'):
+    return {'registration_number':'40000000001','summary':text,'evidence_quote':quote,
+        'source_url':'https://example.org/article','finding_type':kind,'event_date':date,
+        'event_status':'reported_decision'}
+
+
+class AssessmentTests(unittest.TestCase):
+    def test_cartel_appeal_one_case_and_petition_only_five(self):
+        a=finding();b=finding('legal_dispute','The court rejected the cartel appeal.','Separate exact quotation',None)
+        c=finding('insolvency','An insolvency application was filed; the company disputed it.','Petition quotation','2018-06-15')
+        reviews={'findings':{finding_key(f):{'case_id':'case-2021'} for f in [a,b]}}
+        result=assess(item([a,b,c]),reviews)
+        self.assertEqual(result['score'],65)
+        self.assertEqual(len(result['events']),2)
+        self.assertEqual(len(result['events'][0]['sources']),1)
+        self.assertEqual(len(result['events'][0]['evidence']),2)
+        self.assertTrue(result['recommendation'].startswith('Not recommended'))
+
+    def test_exact_duplicate_distinct_cases_and_boundary(self):
+        a=finding();result=assess(item([a,copy.deepcopy(a)]))
+        self.assertEqual(result['score'],70)
+        self.assertFalse(result['recommendation'].startswith('Not recommended'))
+        b=finding(quote='A different case supporting quotation',date='2023-05-06')
+        self.assertEqual(assess(item([a,b]))['score'],40)
+
+    def test_missing_data_is_provisional_not_penalty_or_zero_debt(self):
+        result=assess(item())
+        self.assertEqual(result['score'],100)
+        self.assertTrue(result['provisional'])
+        data=item();data['tax_debt']=[{'query_status':'NO_PUBLISHED_DEBT_ABOVE_THRESHOLD','published_debt_amount':None}]
+        self.assertEqual(assess(data)['score'],100)
+        self.assertTrue(assess(data)['areas']['Tax debt'])
+
+    def test_sanctions_need_current_run_applicability_review(self):
+        data=item();candidate={'subject_key':'s','source':'fid_eu','entity_id':'e'}
+        data['sanctions_candidates']=[candidate]
+        self.assertEqual(assess(data)['score'],100)
+        key=digest([data['registration_number'],'s','fid_eu','e'])
+        reviews={'sanctions':{key:{'status':'CONFIRMED_APPLICABLE','run_id':'r','reason':'Verified identity and applicability'}}}
+        self.assertEqual(assess(data,reviews)['score'],0)
+        reviews['sanctions'][key]['run_id']='old'
+        self.assertEqual(assess(data,reviews)['score'],100)
+
+    def test_floor_and_financial_zero_and_units(self):
+        fs=[finding('fraud','Reported fraud '+str(n),'Quote '+str(n)) for n in range(8)]
+        self.assertEqual(assess(item(fs))['score'],0)
+        self.assertIsNone(numeric(None))
+        self.assertEqual(numeric('0'),0)
+        self.assertEqual(numeric('1.2',1000),1200)
+
+    def test_history_is_idempotent_and_missing_web_does_not_erase_events(self):
+        data=item([finding()]);companies=[{'registration_number':data['registration_number'],'name':'Example','role':'ROOT'}]
+        with tempfile.TemporaryDirectory() as directory:
+            first,_=build_report(None,'r',companies,lambda *args:data,Path(directory))
+            repeat,_=build_report(None,'r',companies,lambda *args:data,Path(directory))
+            self.assertEqual(first,repeat)
+            self.assertIsNone(first['sheets']['Overview'][0]['New findings'])
+            data=item();data['web_checks']=[{'search_status':'FAILED','analysis_status':'ERROR'}]
+            second,_=build_report(None,'r',companies,lambda *args:data,Path(directory))
+            self.assertEqual(second['sheets']['Overview'][0]['Reliability score'],70)
+            self.assertEqual(second['sheets']['Overview'][0]['New findings'],0)
+            self.assertIn('Previously reported',second['sheets']['Findings'][0]['Status'])
+
+    def test_source_failure_not_field_removal(self):
+        data=item();data['quality']=[{'source':'ur_register','status':'FOUND'}]
+        data['registry']=[{'record_key':'reg','name':'Example'}]
+        companies=[{'registration_number':data['registration_number'],'name':'Example','role':'ROOT'}]
+        with tempfile.TemporaryDirectory() as directory:
+            build_report(None,'r',companies,lambda *args:data,Path(directory))
+            data['quality'][0]['status']='ERROR';data['registry']=[]
+            second,_=build_report(None,'r',companies,lambda *args:data,Path(directory))
+            self.assertFalse(any(row['Field'].startswith('registry:') for row in second['sheets']['Changes']))
+
+    def test_review_requires_reason_and_reviewer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'review.json'
+            path.write_text(json.dumps({'sanctions':{'key':{'status':'CONFIRMED_APPLICABLE'}}}))
+            with self.assertRaises(ValueError):load_reviews(path)
+
+    def test_negative_equity_latest_statement_and_ambiguity(self):
+        data=item();data['financials']=[{'year':'2024','equity':'-100','statement_id':'s','file_id':'f'}]
+        self.assertEqual(assess(data)['score'],85)
+        data['financials'].append({'year':'2025','equity':'0','statement_id':'s2','file_id':'f2'})
+        self.assertEqual(assess(data)['score'],100)
+        data['financials'].append({'year':'2025','equity':'-200','statement_id':'s3','file_id':'f3'})
+        result=assess(data)
+        self.assertEqual(result['score'],100)
+        self.assertTrue(any('Multiple latest' in w for w in result['warnings']))
+
+    def test_legal_protection_not_labelled_declared_insolvency(self):
+        data=item();data['v_insolvency']=[{'proceeding_state':'ACTIVE','proceeding_form':'LEGAL_PROTECTION','record_key':'k'}]
+        result=assess(data)
+        self.assertEqual(result['score'],85)
+        self.assertEqual(result['events'][0]['title'],'Active legal protection proceeding')
+
+    def test_official_event_retained_on_failure_and_removed_on_success(self):
+        data=item();data['quality']=[{'source':'vid_debt','status':'FOUND'}]
+        data['tax_debt']=[{'query_status':'PUBLISHED_DEBT','published_debt_amount':'200','effective_date':'2026-09-09','evidence_url':'https://example.org'}]
+        companies=[{'registration_number':data['registration_number'],'name':'Example','role':'ROOT'}]
+        with tempfile.TemporaryDirectory() as directory:
+            build_report(None,'r',companies,lambda *args:data,Path(directory))
+            data['quality'][0]['status']='ERROR';data['tax_debt']=[]
+            second,_=build_report(None,'r',companies,lambda *args:data,Path(directory))
+            self.assertEqual(second['sheets']['Overview'][0]['Reliability score'],85)
+            data['quality'][0]['status']='FOUND'
+            data['tax_debt']=[{'query_status':'NO_PUBLISHED_DEBT_ABOVE_THRESHOLD'}]
+            third,_=build_report(None,'r',companies,lambda *args:data,Path(directory))
+            self.assertEqual(third['sheets']['Overview'][0]['Reliability score'],100)
+            self.assertTrue(any('no longer scored' in r['Field'] for r in third['sheets']['Changes']))
+
+
+if __name__ == '__main__':unittest.main()

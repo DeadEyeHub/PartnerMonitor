@@ -113,6 +113,8 @@ def company(db,run_id,registration_number):
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='sanctions_screening'").fetchone():
         for name in ('sanctions_screening','sanctions_candidates'):
             result[name] = [dict(r) for r in db.execute(f'SELECT * FROM {name} WHERE run_id=? AND registration_number=?',(run_id,registration_number))]
+        from .screening import subjects
+        result['sanctions_subjects']=subjects(db,run_id,registration_number)
     return result
 
 
@@ -141,8 +143,18 @@ def compare(db,current,previous):
 
 def report(db,run_id,path):
     data = summary(db,run_id)
-    from .overview import overview_rows,screening_rows,export_csv
-    overview=overview_rows(db,run_id,data['companies'],company)
+    from .overview import screening_rows,export_csv
+    from .report_data import build_report
+    from .web_logging import atomic_text
+    payload, items = build_report(db,run_id,data['companies'],company,path.parent)
+    model_reports=[]
+    from .final_media_report import export_final_results
+    latest_jobs=sorted({check['job_id'] for item in items.values() for check in item.get('web_checks',[]) if check.get('job_id')})
+    for job_id in latest_jobs:
+        model_reports.append(export_final_results(db,job_id,path.parent/('model-final-'+job_id+'.html')))
+    overview=payload['sheets']['Overview']
+    payload_path=path.with_suffix('.workbook.json')
+    atomic_text(payload_path,json.dumps(payload,ensure_ascii=False,indent=2))
     csv_path=path.with_suffix('.csv')
     export_csv(overview,csv_path)
     evidence_links = {}
@@ -169,15 +181,23 @@ def report(db,run_id,path):
         if not rows:
             return '<p class="muted">No records. Check the source status.</p>'
         columns = [c for c in rows[0] if c not in exclude and not c.endswith('_json') and c!='limitations']
-        return '<div class="scroll"><table><thead><tr>'+''.join('<th title="'+esc(c)+'">'+esc(display_label(c))+'</th>' for c in columns)+'</tr></thead><tbody>'+''.join('<tr>'+''.join('<td>'+esc(row.get(c))+'</td>' for c in columns)+'</tr>' for row in rows)+'</tbody></table></div>'
+        def cell(value):
+            return '<br>'.join('<a href="'+esc(line)+'">'+esc(line)+'</a>' if line.startswith(('https://','http://')) else esc(line)
+                for line in str('' if value is None else value).split('\n'))
+        return '<div class="scroll"><table><thead><tr>'+''.join('<th title="'+esc(c)+'">'+esc(display_label(c))+'</th>' for c in columns)+'</tr></thead><tbody>'+''.join('<tr>'+''.join('<td>'+cell(row.get(c))+'</td>' for c in columns)+'</tr>' for row in rows)+'</tbody></table></div>'
     blocks = ['<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Partner Monitor — Data</title>',
       '<style>body{font:15px system-ui;margin:32px;background:#f5f7fa;color:#172435}h1,h2{color:#133b55}table{border-collapse:collapse;background:white;width:100%}td,th{padding:9px;border:1px solid #dce3ea;text-align:left;vertical-align:top}th{background:#e8eff6}details{margin:12px 0;padding:12px;background:white;border:1px solid #dce3ea}summary{cursor:pointer;font-weight:600}.scroll{overflow:auto}.muted{color:#596574}a{color:#075c9a}</style>',
       '<h1>Partner Monitoring Report</h1>',
       '<p>Official-data run '+esc(run_id)+' · '+esc(data['run']['started_at'])+' · '+esc(data['run']['status'])+'</p>',
-      '<p>Risk scores and risk classes have not yet been calculated. Blank scores and new-findings counts mean not assessed, not zero.</p>',
+      '<p>Score starts at 100: applicable sanctions −100, cartel −30, court dispute −5, other negative event −15. Minimum 0. Below 70: not recommended. One case is charged once. Historical events do not automatically expire. Missing data does not reduce the score; incomplete checks make the recommendation provisional.</p>',
+      '<p>Assessment '+esc(payload['id'])+' · '+esc(payload['created_at'])+' · '+esc(payload['version'])+'</p>',
       '<p><a href="'+esc(csv_path.name)+'">Download compact CSV</a></p>',
       '<h2>Overview</h2>',table(overview),
-      '<p>Coverage is the percentage of seven equally weighted data areas available: UR identity, VID rating, VAT lookup, financial data, tax debt, sanctions name screening and web analysis. It measures available checks, not reliability. Main reasons are selected recorded facts, not a complete risk assessment.</p>',
+      '<p>Coverage is the percentage of seven available checks: UR identity, VID rating, VAT, financials, tax debt, sanctions screening and web analysis. A score of 100 with gaps means no penalty in available evidence, not proof of absence. Blank new-findings count means no earlier assessment baseline.</p>',
+      '<h2>Scored events</h2>',table(payload['sheets']['Findings']),
+      '<h2>Changes since previous assessment</h2>',
+      table(payload['sheets']['Changes']) if payload['previous_id'] else '<p>First assessment baseline. Future reports will compare scores, events and source fields against it.</p>',
+      '<h2>Data quality</h2>',table(payload['sheets']['Data Quality']),
       '<h2>Sanctions Screening</h2>',
       '<p>EU, UN and Latvian lists are supplied by FID, the agreed source for this stage. File publication dates are informational: an old date alone does not make screening incomplete. Download failures, missing inputs and invalid dates still require attention.</p>',
       '<p>Names of companies, former company names, owners, shareholders, beneficial owners and officers are compared. A name candidate requires identity review. Cross-script transliteration and sectoral restrictions are not checked. Related companies are screened separately; ownership or control does not automatically transfer a result to another company.</p>',
@@ -194,12 +214,16 @@ def report(db,run_id,path):
                 log_path=export_log(data_dir,job['job_id'],path.parent)
                 log_links.append('<li><a href="'+esc(log_path.relative_to(path.parent).as_posix())+'">Tavily and model log — '+esc(job['job_id'])+'</a></li>')
         blocks[-1:-1]=['<h2>Adverse Media Jobs</h2>',
-          '<p>Each company card shows its latest web job for this official-data run. Job status covers only its selected companies. Findings require review; failed or limited searches do not establish an absence of adverse information.</p>',table(jobs)]
+          '<p>Each company card shows its latest web job for this official-data run. Previously scored media events are retained until explicitly excluded. Failed or limited searches do not establish absence of adverse information.</p>',table(jobs)]
         if log_links:blocks[-1:-1]=['<ul>'+''.join(log_links)+'</ul>']
     for row in data['companies']:
         reg = row['registration_number']
-        item = company(db,run_id,reg)
+        item = dict(items[reg])
         blocks.append('<details><summary>'+esc(reg)+' — '+esc(row['name'] or 'Not found in UR')+' ('+esc(row['role'])+')</summary>')
+        assessment=payload['companies'][reg]['assessment']
+        blocks.append('<p><strong>'+str(assessment['score'])+'/100 · '+esc(assessment['recommendation'])+'</strong></p><p>'+esc(assessment['reason'])+'</p>')
+        if assessment['warnings']:
+            blocks.append('<ul>'+''.join('<li>'+esc(w)+'</li>' for w in assessment['warnings'])+'</ul>')
         blocks.append(table(item.pop('quality')))
         for name,records in item.items():
             if isinstance(records,list):
@@ -213,4 +237,5 @@ def report(db,run_id,path):
     blocks.append('</html>')
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text('\n'.join(blocks),encoding='utf-8')
-    return {'report':str(path),'csv':str(csv_path),'run_id':run_id}
+    return {'report':str(path),'csv':str(csv_path),'workbook_data':str(payload_path),'model_reports':model_reports,'run_id':run_id,
+            'assessment_id':payload['id'],'assessment_status':'PROVISIONAL' if any(c['assessment']['provisional'] for c in payload['companies'].values()) else 'CALCULATED'}

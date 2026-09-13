@@ -1,0 +1,17 @@
+{
+  "findings": {
+    "3df9105631b8916cbd5d4ca1": {
+      "case_id": "skonto-construction-cartel-2021-07-30",
+      "rule": "cartel",
+      "reviewer": "Project policy approved by user",
+      "reason": "Competition Council cartel decision and its appeal are one matter, charged once."
+    },
+    "1cbafdee17b1261ff8545408": {
+      "case_id": "skonto-construction-cartel-2021-07-30",
+      "rule": "cartel",
+      "reviewer": "Project policy approved by user",
+      "reason": "Competition Council cartel decision and its appeal are one matter, charged once."
+    }
+  },
+  "sanctions": {}
+}

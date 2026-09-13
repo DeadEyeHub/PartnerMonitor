@@ -327,10 +327,31 @@ Registration number, Reliability score, Risk class, Coverage, Main reason,
 New findings, Recommended action. UTF-8 BOM preserves Latvian text in Excel.
 Import registration numbers as text. Formula-leading text is escaped for CSV safety.
 
-Reliability score and New findings stay blank until scoring and finding-difference
-logic exist; Risk class is NOT_ASSESSED. Main reason lists selected recorded facts
-and pending work, not a comprehensive risk result. Coverage is a percentage of seven
+Reliability scores now use the versioned rules in `config/risk_rules.json`.
+New findings is blank for the first assessment baseline and counts new distinct events
+afterwards. Coverage is a percentage of seven
 equally weighted areas: UR identity, VID rating, VAT lookup, financial data, tax debt,
 sanctions name screening and web analysis. No web result is a zero-risk conclusion.
 Source dates remain visible in the HTML; raw JSON fields are hidden from its tables.
 Old run history is retained. Replay creates a new run with the current FID date policy.
+
+## Final assessment and Excel
+
+Build the collector after code changes, then generate all final artifacts from saved data:
+
+```powershell
+docker compose build collector
+./scripts/Finish-Report.ps1 -Run c71f9f27fc5b44feb51fbf217e8fda1d
+```
+
+This runs the Docker report command (no provider calls), then exports `data/reports/latest.xlsx`
+with Overview, Findings, Financials, Sanctions, Changes and Data Quality. It also writes
+HTML, compact CSV and a reproducible workbook JSON payload. Excel export uses the installed
+workspace Node/Artifact Tool runtime on Windows; use `-RuntimeRoot` for a different location.
+Docker alone generates HTML/CSV/JSON. `-SkipReport` exports the existing payload to Excel.
+`-Preview` also renders the six workbook sheets for inspection.
+
+The scoring engine writes immutable `risk_assessments` and `risk_events` to SQLite and
+JSON snapshots under `data/reports/assessments`. Repeating unchanged input is idempotent.
+See [assessment methodology](docs/assessment.md) for penalties, event links, reviews,
+history, scope and operational limitations.

@@ -53,4 +53,4 @@ def run_workflow(data_dir, output, *, run_id=None, job_id=None, input_path=None,
             'status':'COMPLETED' if official=='COMPLETED' and web['status']=='COMPLETED' else 'PARTIAL',
             'official_status':official,'web_status':web['status'],
             'collection':collection_result,'web':diagnostics,'artifacts':artifacts,
-            'assessment_status':'NOT_ASSESSED'}
+            'assessment_status':artifacts['assessment_status']}

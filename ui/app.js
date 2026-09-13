@@ -9,7 +9,6 @@ async function api(path, body) {
   if (!response.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
-const descriptions = {report:'Regenerate scores and reports using saved evidence. No paid provider calls.',collect:'Download current official records for the selected company or file, then build reports.',media:'Use the selected saved collection and run fresh Tavily searches and model analysis.',full:'Collect official records for the selected company or file, then search and analyze every selected company.'};
 function inputChanged() {
   const collecting=['collect','full'].includes($('mode').value);
   const single=$('inputMode').value==='single', list=$('inputMode').value==='list';
@@ -65,8 +64,6 @@ function modeChanged() {
   $('inputGroup').hidden=!['collect','full'].includes(mode);
   $('monitorGroup').hidden=mode!=='monitor';
   $('paidGroup').hidden=!['monitor','full'].includes(mode);
-  $('modeHelp').textContent=descriptions[mode]||'';
-  $('modeHelp').hidden=true;
   $('start').textContent=mode==='full'?'Create report':'Check for changes';
   inputChanged();
 }

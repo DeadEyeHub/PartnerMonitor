@@ -1,7 +1,6 @@
 """Loopback-only desktop launcher; Docker remains the pipeline execution environment."""
 import argparse
 import base64
-import hashlib
 import html
 import json
 import mimetypes
@@ -40,7 +39,6 @@ class Launcher:
     def __init__(self, root=ROOT):
         self.root = root
         self.license = (root / 'LICENSE.md').read_text(encoding='utf-8')
-        self.license_hash = hashlib.sha256(self.license.encode()).hexdigest()
         self.sessions = {}
         self.lock = threading.Lock()
         self.job = None
@@ -69,14 +67,13 @@ class Launcher:
         with self.lock:
             now = time.time()
             self.sessions = {k:v for k,v in self.sessions.items() if now-v['created'] < 86400}
-            self.sessions[token] = {'accepted':False, 'created':now}
+            self.sessions[token] = {'created':now}
         return token
 
-    def authorize(self, token, accepted=False):
+    def authorize(self, token):
         with self.lock:
             session = self.sessions.get(token)
             if not session or time.time()-session['created'] >= 86400: raise PermissionError('Reload the launcher')
-            if accepted and not session['accepted']: raise PermissionError('Accept the license first')
 
     def files(self):
         folder = self.root / 'data/input'
@@ -332,7 +329,7 @@ class Handler(BaseHTTPRequestHandler):
                 app.authorize(self.headers.get('X-Session'))
                 self.send(200,app.monitoring_reports())
             elif path == '/api/status':
-                app.authorize(self.headers.get('X-Session'),accepted=False)
+                app.authorize(self.headers.get('X-Session'))
                 self.send(200,app.status())
             elif path.startswith('/reports/'):
                 target = within(app.root/'data/reports',unquote(path[len('/reports/'):]))
@@ -349,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.guard(); app = self.server.app
             token = self.headers.get('X-Session')
-            app.authorize(token,accepted=False)
+            app.authorize(token)
             if self.headers.get('Content-Type') != 'application/json': raise ValueError('JSON required')
             size = int(self.headers.get('Content-Length','0'))
             if not 0 < size <= MAX_BODY: raise ValueError('Request too large or empty')

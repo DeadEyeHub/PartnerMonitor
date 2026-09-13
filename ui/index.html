@@ -19,7 +19,6 @@
       <div id="fileGroup" hidden><label for="input">Company file</label><div class="fileRow"><select id="input"></select><label class="upload" for="upload">Upload file</label><input id="upload" type="file" accept=".csv,.xlsx" hidden></div><p class="muted">CSV or XLSX · up to 5 MB · required column: registration_number</p><p id="uploadResult" role="status"></p></div></div>
     <div id="paidGroup" hidden><p class="muted">All selected companies receive web analysis. Request budgets apply per company. They do not guarantee a fixed bill. A new run performs fresh searches.</p></div>
 
-    <p id="modeHelp" class="note" hidden></p>
     <button class="primary" id="start" type="submit">Create report</button><p id="error" role="alert"></p>
   </fieldset></form></section>
   <section class="card results"><div class="sectionHead"><h2>Latest results</h2><span id="jobStatus" class="status">Idle</span></div><p id="assessmentDate" class="muted">No assessment loaded.</p><div id="artifacts" class="artifacts"></div><p class="note">Scores with incomplete checks remain provisional. Review each company's evidence and coverage before drawing conclusions.</p><div class="separator"></div><h3>Execution</h3><p id="stage">Ready to start.</p><p class="muted">Only one workflow runs at a time. Closing this browser tab does not cancel a running job. Keep the launcher process open until it finishes.</p><a href="/LICENSE.md" target="_blank" rel="noopener">Read or save the license agreement</a></section>

@@ -132,34 +132,39 @@ class Launcher:
             raise ValueError('Invalid company file: require unique 11-digit registration_number values and valid CSV/XLSX headers')
         return {'name':target.name,'companies':count}
 
-    def single_registration(self, request):
+    def manual_registrations(self, request):
         if request.get('mode') not in {'collect', 'full'}:
             return None
         source = request.get('input_mode', 'file')
-        if source not in {'file', 'single'}:
+        if source not in {'file', 'single', 'list'}:
             raise ValueError('Invalid company input mode')
         if source == 'file':
             return None
-        number = request.get('registration_number')
-        if not isinstance(number, str) or not re.fullmatch(r'[0-9]{11}', number.strip()):
+        numbers = [request.get('registration_number')] if source == 'single' else request.get('registration_numbers')
+        if not isinstance(numbers, list) or not 1 <= len(numbers) <= 100:
+            raise ValueError('Add between 1 and 100 companies')
+        if any(not isinstance(n, str) or not re.fullmatch(r'[0-9]{11}', n.strip()) for n in numbers):
             raise ValueError('Registration number must contain exactly 11 digits')
-        return number.strip()
+        numbers = [n.strip() for n in numbers]
+        if len(set(numbers)) != len(numbers):
+            raise ValueError('Duplicate registration numbers are not allowed')
+        return numbers
 
     def command(self, request):
         mode = request.get('mode')
         if mode not in {'report','collect','media','full'}: raise ValueError('Invalid workflow')
-        single = self.single_registration(request)
+        numbers = self.manual_registrations(request)
         args = ['docker','compose','run','--rm','-T','collector']
         if mode in {'media','full'}:
             if request.get('paid') is not True: raise ValueError('Acknowledge paid provider requests')
-            limit = 1 if single else request.get('limit')
+            limit = len(numbers) if numbers else request.get('limit')
             if type(limit) is not int or not 1 <= limit <= 100: raise ValueError('Company limit must be 1–100')
             args += ['pipeline','--limit',str(limit)]
         elif mode == 'collect': args += ['collect']
         else: args += ['report']
         if mode in {'collect','full'}:
-            name = 'single-company.csv' if single else request.get('input')
-            if not single and (not isinstance(name,str) or name not in self.files()): raise ValueError('Select an available input file')
+            name = 'manual-companies.csv' if numbers else request.get('input')
+            if not numbers and (not isinstance(name,str) or name not in self.files()): raise ValueError('Select an available input file')
             args += ['--input','/input/'+name]
         else:
             run = request.get('run','')
@@ -175,12 +180,12 @@ class Launcher:
         args = self.command(request)
         with self.lock:
             if self.job and self.job['status'] == 'RUNNING': raise ValueError('A workflow is already running')
-            single = self.single_registration(request)
-            if single:
+            numbers = self.manual_registrations(request)
+            if numbers:
                 folder = self.root/'data/input'
                 folder.mkdir(parents=True, exist_ok=True)
-                name = 'single-' + single + '-' + secrets.token_hex(8) + '.csv'
-                (folder/name).write_text('registration_number\n' + single + '\n', encoding='utf-8')
+                name = 'manual-' + secrets.token_hex(8) + '.csv'
+                (folder/name).write_text('registration_number\n' + '\n'.join(numbers) + '\n', encoding='utf-8')
                 args[args.index('--input') + 1] = '/input/' + name
             self.log = ''
             self.job = {'id':secrets.token_hex(12),'mode':request['mode'],'status':'RUNNING','started_at':time.strftime('%Y-%m-%d %H:%M:%S'),'stage':'Starting'}

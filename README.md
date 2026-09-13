@@ -405,3 +405,9 @@ For batches, the visible web-analysis limit controls how many companies receive
 media checks. **Advanced options** contains individual processing modes, the saved
 collection run and optional Excel export. Provider-cost acknowledgement remains
 required before paid requests.
+
+Choose **Build a company list** to add registration numbers one at a time with
+**Add company** (or Enter). Remove entries before starting as needed. The list accepts
+1–100 unique 11-digit numbers and remains in the page until reload. Full pipeline
+performs web analysis for every listed company; the backend saves the submitted
+list as a local CSV for the existing collection pipeline.

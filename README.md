@@ -391,3 +391,10 @@ The scoring engine writes immutable `risk_assessments` and `risk_events` to SQLi
 JSON snapshots under `data/reports/assessments`. Repeating unchanged input is idempotent.
 See [assessment methodology](docs/assessment.md) for penalties, event links, reviews,
 history, scope and operational limitations.
+
+To check one company, choose **Collect official data + reports** or **Full pipeline**,
+select **Single company by registration number**, and enter its 11-digit Latvian
+registration number. No spreadsheet or company name is required. The launcher saves
+a one-row input CSV locally, collects official records, and generates the usual reports.
+Full pipeline performs paid web analysis for exactly one root company; related official
+records follow the existing collection rules. Select **Company file** for batch processing.

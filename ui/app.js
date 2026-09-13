@@ -8,14 +8,24 @@ async function api(path, body) {
   if (!response.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
-const descriptions = {report:'Regenerate scores and reports using saved evidence. No paid provider calls.',collect:'Download current official records for every company in the selected file, then build reports.',media:'Use the selected saved collection and run fresh Tavily searches and model analysis.',full:'Collect official records for the selected file, then search and analyze up to the specified web company limit.'};
+const descriptions = {report:'Regenerate scores and reports using saved evidence. No paid provider calls.',collect:'Download current official records for the selected company or file, then build reports.',media:'Use the selected saved collection and run fresh Tavily searches and model analysis.',full:'Collect official records for the selected company or file, then search and analyze up to the specified web company limit.'};
+function inputChanged() {
+  const collecting=['collect','full'].includes($('mode').value);
+  const single=$('inputMode').value==='single';
+  $('singleGroup').hidden=!single;$('fileGroup').hidden=single;
+  $('registrationNumber').required=collecting&&single;
+  $('registrationNumber').disabled=!(collecting&&single);
+  $('limit').readOnly=collecting&&single;
+  if(collecting&&single)$('limit').value=1;
+}
+$('inputMode').addEventListener('change',inputChanged);
 function modeChanged() {
   const mode=$('mode').value;
   $('inputGroup').hidden=!['collect','full'].includes(mode);
   $('runGroup').hidden=['collect','full'].includes(mode);
   $('paidGroup').hidden=!['media','full'].includes(mode);
   $('modeHelp').textContent=descriptions[mode];
-  $('paid').checked=false;
+  $('paid').checked=false;inputChanged();
 }
 $('mode').addEventListener('change',modeChanged);modeChanged();
 const dialog=$('licenseDialog');dialog.showModal();
@@ -55,7 +65,7 @@ $('launchForm').addEventListener('submit',async event=>{
   if(!accepted || busy)return;
   try {
     $('start').disabled=true;
-    await api('/api/start',{mode:$('mode').value,input:$('input').value,run:$('run').value.trim(),limit:Number($('limit').value),paid:$('paid').checked,excel:$('excel').checked});
+    await api('/api/start',{mode:$('mode').value,input:$('input').value,input_mode:$('inputMode').value,registration_number:$('registrationNumber').value.trim(),run:$('run').value.trim(),limit:Number($('limit').value),paid:$('paid').checked,excel:$('excel').checked});
     await refresh();
   }catch(error){$('error').textContent=error.message;}
   finally{$('start').disabled=busy;}

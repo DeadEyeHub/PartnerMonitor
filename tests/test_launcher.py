@@ -38,6 +38,30 @@ class LauncherTests(unittest.TestCase):
             with self.assertRaises(ValueError):self.app.command(request)
         with self.assertRaises(ValueError):within(self.root/'data/reports','../../.env')
 
+    def test_single_company_input_and_web_limit(self):
+        request={'mode':'full','input_mode':'single','registration_number':' 01234567890 ','paid':True,'limit':99}
+        args=self.app.command(request)
+        self.assertEqual(args[args.index('--limit')+1],'1')
+        with patch('partner_monitor.launcher.threading.Thread') as worker:
+            self.app.start(request)
+        command=worker.call_args.kwargs['args'][0]
+        path=self.root/'data/input'/Path(command[-1]).name
+        from partner_monitor.inputs import read_companies
+        self.assertEqual(len(read_companies(path)),1)
+        self.assertEqual(path.read_text(),'registration_number\n01234567890\n')
+        before=self.app.files()
+        with self.assertRaises(ValueError):self.app.start(request)
+        self.assertEqual(before,self.app.files())
+
+    def test_invalid_single_company_never_creates_input(self):
+        before=self.app.files()
+        for number in ['', '123', '123456789012', '1234567890x', '../12345678', 12345678901, chr(0xff11)*11]:
+            with self.subTest(number=number), self.assertRaises(ValueError):
+                self.app.start({'mode':'collect','input_mode':'single','registration_number':number})
+        with self.assertRaises(ValueError):self.app.command({'mode':'collect','input_mode':'unknown'})
+        with self.assertRaises(ValueError):self.app.command({'mode':'full','input_mode':'single','registration_number':'40003248848'})
+        self.assertEqual(before,self.app.files())
+
     def test_upload_validation_and_secret_redaction(self):
         result=self.app.upload({'name':'../test.csv','content':base64.b64encode(b'registration_number\n40000000002\n').decode()})
         self.assertEqual(result['companies'],1)

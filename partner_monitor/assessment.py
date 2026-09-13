@@ -2,6 +2,7 @@
 import hashlib
 import json
 import re
+from .event_identity import identity as event_identity
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -124,8 +125,7 @@ def assess(item, reviews=None):
             warnings.append('Verify current sanctions applicability for media finding ' + key)
             continue
         case = review.get('case_id')
-        # Exact quoted evidence only. Cross-publication case links require an explicit review.
-        group = digest([reg, 'case', case]) if case else digest([reg, 'quote', f['evidence_quote'].strip()])
+        group = digest([reg, *event_identity(f, case)])
         add(group, rule, f['summary'], f.get('event_date'), f['source_url'], f['evidence_quote'],
             f['event_status'].replace('_', ' ').capitalize(), key)
         if not f.get('event_date'):

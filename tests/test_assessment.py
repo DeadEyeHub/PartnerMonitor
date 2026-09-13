@@ -38,6 +38,27 @@ class AssessmentTests(unittest.TestCase):
         b=finding(quote='A different case supporting quotation',date='2023-05-06')
         self.assertEqual(assess(item([a,b]))['score'],40)
 
+    def test_explicit_case_number_merges_evidence_but_not_different_cases(self):
+        a=finding('legal_dispute','A court dispute','Case No. C12345678: a claim was filed.')
+        b=finding('legal_dispute','An appeal','Lietas Nr. C12345678: the appeal was dismissed.')
+        b['source_url']='https://example.org/second'
+        result=assess(item([a,b]))
+        self.assertEqual(result['score'],95)
+        self.assertEqual(len(result['events'][0]['sources']),2)
+        b['evidence_quote']='Case No. C87654321: an unrelated claim.'
+        self.assertEqual(assess(item([a,b]))['score'],90)
+        b['evidence_quote']='Case No. C12345678 and Case No. C87654321 were discussed.'
+        self.assertEqual(assess(item([a,b]))['score'],90)
+        b['summary']='Case No. C12345678';b['evidence_quote']='A separate quoted event without a case number.'
+        self.assertEqual(assess(item([a,b]))['score'],90)
+
+    def test_quote_whitespace_duplicates_and_manual_override(self):
+        a=finding(quote='Exact quotation with spaces.')
+        b=finding(quote='Exact quotation  with\nspaces.')
+        self.assertEqual(assess(item([a,b]))['score'],70)
+        reviews={'findings':{finding_key(a):{'case_id':'one'},finding_key(b):{'case_id':'two'}}}
+        self.assertEqual(assess(item([a,b]),reviews)['score'],40)
+
     def test_missing_data_is_provisional_not_penalty_or_zero_debt(self):
         result=assess(item())
         self.assertEqual(result['score'],100)

@@ -1,35 +1,20 @@
-# Cleanup review
+# Completed cleanup
 
-Reviewed after adding manual monitoring. These are proposals, not deletions.
+Each item was implemented in a separate commit:
 
-1. **Remove obsolete launcher UI state.** `ui/style.css` still contains license-dialog
-   styles. `launcher.py` retains the old acceptance flag and license hash. `app.js`
-   retains descriptions for processing modes no longer offered in the UI. Keep the
-   license file and the session/origin checks.
-2. **Separate server responsibilities.** `launcher.py` combines HTTP routing, Docker
-   process management, saved-report rendering and history lookup. Move these into
-   small modules with one shared validated job request. Keep CLI diagnostic modes.
-3. **Separate report rendering from data inspection.** `inspection.py` combines SQL,
-   evidence export, missing-data explanations and HTML string generation. Introduce
-   an explicit report view model and templates; avoid rendering every list in a
-   company record automatically.
-4. **Make methodology text derive from rules.** Weights live in `config/risk_rules.json`,
-   but descriptions are also maintained in HTML and documentation. Generate the
-   visible rule table from configuration to prevent drift.
-5. **Reduce report repetition.** The overview, scored events, coverage table and
-   company cards repeat reasons and warnings. Keep a concise summary, changes and
-   missing-data table; put raw source rows and provider traces in technical details.
-6. **Improve change labels.** Current changes include internal event IDs and source
-   field names. Map them to readable business labels; group field changes belonging
-   to one record. Preserve raw identifiers only in expandable evidence.
-7. **Define artifact retention.** Keep assessment snapshots, source evidence and
-   archived reports. Workbook previews, temporary inspection files and duplicate
-   convenience exports can have a documented cleanup policy. Do not delete history
-   merely because it is old: monitoring comparisons and evidence links depend on it.
-8. **Review event deduplication separately.** Exact quotations and reviewed case links
-   are currently used to join evidence. Different articles can still describe the
-   same case. Improve event linking with tests before changing scoring; this is a
-   correctness task, not a cosmetic cleanup.
+1. Removed obsolete license-dialog CSS, acceptance/hash state and unused mode descriptions.
+2. Split launcher HTTP routing, job execution and saved-report history into modules.
+3. Split database inspection, report view models, HTML primitives and report composition.
+   Evidence sections use an explicit allowlist.
+4. Generate visible methodology from scoring configuration; removed stale duplicate tables.
+5. Consolidated provider traces and source rows in technical details; removed repeated root-company summaries.
+6. Grouped source-record changes and replaced internal IDs with business labels. Raw identities remain in snapshots.
+7. Added opt-in retention for old reproducible workbook artifacts; history and evidence are protected.
+8. Added conservative deduplication using whitespace-normalized quotations and explicit Latvian civil-case numbers.
+   Reviewed case links take priority. Different or ambiguous case numbers remain separate.
 
-Suggested order: obsolete UI state, readable changes/report layout, shared methodology,
-then module separation and an explicit artifact-retention policy.
+The event-linking change uses methodology risk-v1.3.0. Existing reports remain archived;
+new monitoring baselines use the current methodology. Fuzzy semantic matches still need
+review and are never automatically merged. No evidence or historical report was deleted.
+
+See `artifact-retention.md` and `assessment.md` for operation and scope.

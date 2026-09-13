@@ -21,7 +21,10 @@ categories, not probabilities.
 
 ## One event, multiple publications
 
-Identical quoted evidence is scored once. Cross-publication links use a reviewed
+Identical quoted evidence (ignoring whitespace) is scored once. A single explicit
+Latvian civil-case number in both evidence quotations also links publications; multiple
+case numbers, IDs mentioned only in summaries and fuzzy text are not auto-linked.
+Reviewed case IDs override automatic grouping. Cross-publication links use a reviewed
 `case_id`; all linked evidence is retained and the largest applicable penalty is charged
 once. This prevents a cartel fine and its appeal from adding separate penalties.
 The two accepted SKONTO cartel findings are linked in `config/assessment_reviews.json`.

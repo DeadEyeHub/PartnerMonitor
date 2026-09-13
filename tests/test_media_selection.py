@@ -13,6 +13,31 @@ from partner_monitor.web_media import post_json
 
 
 class SelectionTests(unittest.TestCase):
+    def test_historical_name_dates_are_review_flags_not_automatic_rejections(self):
+        company={'name':'New Firm','name_history':[{'name':'Old Firm','date_to':'2020-01-01'}]}
+        article={'title':'Old Firm court case','snippet':'A retrospective','publication_date':'2025-01-01'}
+        check=selection.name_date_check(company,article)
+        self.assertEqual(check['historical_matches'][0]['status'],'AFTER_HISTORICAL_NAME_END')
+        self.assertTrue(check['review_required'])
+        article['publication_date']='2019-01-01'
+        self.assertEqual(selection.name_date_check(company,article)['historical_matches'][0]['status'],'START_DATE_UNKNOWN')
+        article['publication_date']=None
+        self.assertEqual(selection.name_date_check(company,article)['historical_matches'][0]['status'],'PUBLICATION_DATE_UNKNOWN')
+
+    def test_verifier_uses_fresh_messages_and_explicit_explanation_only(self):
+        company={'name':'Example Ltd','historical_names':[]}
+        article={'title':'News','url':'https://example.org','snippet':'Example Ltd reported event'}
+        response={'choices':[{'finish_reason':'stop','message':{'content':'да','reasoning_details':[{'type':'reasoning.encrypted','data':'DO_NOT_FORWARD'}]}}]}
+        with patch('partner_monitor.web_media.post_json',return_value=response) as post:
+            selection.triage_api(company,article,'key','model')
+            answer,_=selection.verify_api(company,article,'Explicit explanation only','key','model')
+        self.assertEqual(answer,'да')
+        messages=post.call_args.args[2]['messages']
+        self.assertEqual([m['role'] for m in messages],['system','user'])
+        self.assertNotIn('DO_NOT_FORWARD',json.dumps(messages))
+        self.assertIn('Explicit explanation only',messages[1]['content'])
+        self.assertIn('name_date_check',messages[1]['content'])
+
     def test_name_queries_and_word_boundaries(self):
         company={'name':'SIA "SKONTO BŪVE"','historical_names':['AS "Old Firm"'],'registration_number':'12345678901'}
         queries=selection.queries_for(company)

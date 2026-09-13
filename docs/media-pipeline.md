@@ -1,4 +1,4 @@
-# Media pipeline version 3
+# Media pipeline version 4
 
 ## Processing sequence
 
@@ -11,10 +11,17 @@
    Save the original response and retain unique canonical URLs. A result without
    the company name in its title or snippet becomes FILTERED, with a stored reason.
    This lexical filter can miss abbreviations, spelling variants and indirect mentions.
-3. Send a title, URL, company names and at most 1,200 snippet characters to the model.
-   Strict triage output is inspect/reject/uncertain plus an English reason. No
-   findings can be generated from this step. Uncertain results stay PARTIAL.
-4. Only an inspect result permits full-text retrieval through Tavily Extract. No
+3. Each retained news item uses two separate model calls, each with fresh system/user
+   messages. The first receives company identity, available historical-name end dates,
+   title, URL, publication date, criteria and up to 1,200 snippet characters. It writes
+   an explicit English explanation of relevance, conflicts and missing evidence.
+   The second receives the same inputs plus only that explanation, and must return
+   exactly `да` or `нет`. No assistant history, hidden reasoning or encrypted reasoning
+   metadata is forwarded. The verifier must check the source and may disagree.
+   Invalid verdicts are errors, never silently interpreted as yes. Both calls consume
+   the existing persistent request budget. This separation is not an independent
+   factual guarantee or a demonstrated hallucination reduction.
+4. Only a `да` verdict permits full-text retrieval through Tavily Extract. No
    requests are made directly to arbitrary article hosts. A returned URL must match
    the requested canonical URL. Missing text is LIMITED_CONTENT, never no risk.
 5. Select original lines containing a company name and neighboring lines. Remove
@@ -53,8 +60,8 @@ Analyze mode now needs both keys because selected snippets can require Tavily Ex
 `--dry-run` makes no provider requests or database writes; it previews queries, data
 transfers, credential presence and limits. It does not validate provider access.
 
-Version-2 jobs and official-data history remain readable. A changed prompt/pipeline
-version cannot resume an old media job. Start a new job for version 3. The original
+Version-2/3 jobs and official-data history remain readable. A changed prompt/pipeline
+version cannot resume an old media job. Start a new job for version 4. The original
 requested model and limit values are pinned in job configuration.
 
 ## Budgets and retries
@@ -90,6 +97,28 @@ within the original budget; BUDGET_LIMIT rows remain visible and are not retried
 Concurrent execution of the same job is unsupported. Unexpected errors leave the
 job resumable; ordinary provider errors are recorded and the report still exports.
 
+
+## Historical-name dates and recovery
+
+The imported UR name history supplies `date_to` only. `company_context` includes these
+source end dates for searched historical names; no start dates are invented. The code
+compares a valid supplied publication date against each matched historical end date.
+After-end matches are flagged because the article may be retrospective. Earlier dates
+still have START_DATE_UNKNOWN, not a confirmed valid interval. Missing/invalid publication
+or historical end dates are explicit review flags. Publication dates are not inferred
+from URLs and are never substituted for event dates.
+
+The date check and both model outputs are persisted in `web_article_judgment` and shown
+under Web judgments in HTML. A successful explanation is committed before verification;
+if verification fails, resume retries verification without regenerating the explanation.
+Both request/response pairs remain in the standalone model HTML and journal. If a `нет`
+verdict has unresolved date metadata, the item remains TRIAGE_UNCERTAIN/PARTIAL. A `да`
+verdict allows detailed analysis, but date uncertainties still preserve review status.
+The verifier never turns a date mismatch directly into a claim of a different company.
+
+No budget was increased to pay for the extra call. With the same request/text limits,
+fewer articles may reach evidence analysis. Budget gaps remain visible.
+
 ## Reporting and audit
 
 The main HTML report includes `web_quality`, `web_selection`, findings and candidate
@@ -108,7 +137,7 @@ The live event journal is `raw/web_logs/JOB_ID.jsonl` in the data volume. Its HT
 index is `REPORT_DIR/web-logs/JOB_ID/index.html`; refresh during execution. Every
 completed pass/report also creates `tavily.html` and `model.html` in that folder,
 containing complete request/response pairs without the event timeline. Tavily output
-separates search and extract; model output separates triage and evidence analysis.
+separates search and extract; model output separates explanation, verification and evidence analysis.
 The main report links to the journal, and the journal links to these two files.
 
 Logs preserve prompts, snippets, selected text, provider responses, retries, timing,

@@ -99,6 +99,14 @@ def company(db,run_id,registration_number):
                     triage=json.loads(selected.pop('triage_json') or '{}')
                     selected['triage_decision']=triage.get('decision')
                     selected['triage_reason']=triage.get('reason')
+                    selected['verdict']=triage.get('verdict')
+                if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_article_judgment'").fetchone():
+                    result['web_judgments']=[dict(r) for r in db.execute('SELECT a.url,j.explanation,j.verdict,j.date_check_json FROM web_article_judgment j JOIN web_articles a USING(job_id,registration_number,article_id) WHERE j.job_id=? AND j.registration_number=?',(job[0],registration_number))]
+                    for judgment in result['web_judgments']:
+                        dates=json.loads(judgment.pop('date_check_json'))
+                        judgment['publication_date']=dates['publication_date']
+                        judgment['date_review_required']=dates['review_required']
+                        judgment['historical_name_checks']='; '.join(r['name']+': '+r['status']+' (end: '+str(r['date_to'])+')' for r in dates['historical_matches']) or 'No historical name matched'
                 if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_event_links'").fetchone():
                     result['web_event_links']=[dict(r) for r in db.execute('SELECT l.*,a.url AS first_source,b.url AS second_source FROM web_event_links l JOIN web_articles a ON a.job_id=l.job_id AND a.registration_number=l.registration_number AND a.article_id=l.first_article JOIN web_articles b ON b.job_id=l.job_id AND b.registration_number=l.registration_number AND b.article_id=l.second_article WHERE l.job_id=? AND l.registration_number=?',(job[0],registration_number))]
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='sanctions_screening'").fetchone():

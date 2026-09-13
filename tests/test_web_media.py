@@ -37,13 +37,15 @@ class WebMediaTests(unittest.TestCase):
         db.commit();db.close()
         env=patch.dict(os.environ,{'TAVILY_API_KEY':'test-placeholder','OPENROUTER_API_KEY':'test-placeholder','OPENROUTER_MODEL':'fixture/model'})
         env.start();self.addCleanup(env.stop)
-        triage=patch('partner_monitor.media_selection.triage_api',return_value=({'decision':'inspect','reason':'Potential company event'},{}))
+        triage=patch('partner_monitor.media_selection.triage_api',return_value=('The company is named and the excerpt reports an investigation requiring review.',{}))
         triage.start();self.addCleanup(triage.stop)
+        verifier=patch('partner_monitor.media_selection.verify_api',return_value=('да',{}))
+        verifier.start();self.addCleanup(verifier.stop)
         extract=patch('partner_monitor.media_selection.extract_api',return_value={'results':[],'failed_results':[]})
         extract.start();self.addCleanup(extract.stop)
 
     def test_end_to_end_dedup_resume_report_and_evidence(self):
-        response={'results':[{'url':'https://example.org/story?utm_source=x','title':'Investigation','content':BODY,'raw_content':BODY}]}
+        response={'results':[{'published_date':'2026-09-12','url':'https://example.org/story?utm_source=x','title':'Investigation','content':BODY,'raw_content':BODY}]}
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{'response':result()})) as llm:
             output=run_web(self.root,'r')
         self.assertEqual(output['status'],'COMPLETED');self.assertEqual(output['findings'],1)
@@ -65,7 +67,7 @@ class WebMediaTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(p.read_bytes()).hexdigest(),p.stem)
 
     def test_search_then_analyze_and_snippet_gap(self):
-        response={'results':[{'url':'https://example.org/story','title':'News','content':BODY}]}
+        response={'results':[{'published_date':'2026-09-12','url':'https://example.org/story','title':'News','content':BODY}]}
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response):
             job=run_web(self.root,'r',mode='search')
         self.assertEqual(job['status'],'SEARCHED')
@@ -99,15 +101,15 @@ class WebMediaTests(unittest.TestCase):
 
     def test_full_text_upgrades_identical_snippet(self):
         for same_url in (True,False):
-            responses=[{'results':[{'url':'https://example.org/snippet','content':BODY}]},
-                       {'results':[{'url':'https://example.org/snippet' if same_url else 'https://example.org/full','content':BODY,'raw_content':BODY}]},
+            responses=[{'results':[{'published_date':'2026-09-12','url':'https://example.org/snippet','content':BODY}]},
+                       {'results':[{'published_date':'2026-09-12','url':'https://example.org/snippet' if same_url else 'https://example.org/full','content':BODY,'raw_content':BODY}]},
                        {'results':[]}]
             with self.subTest(same_url=same_url),redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=responses),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
                 job=run_web(self.root,'r')
             self.assertEqual(job['status'],'COMPLETED' if same_url else 'PARTIAL');self.assertEqual(llm.call_count,1)
 
     def test_unrelated_snippet_does_not_send_raw_text_to_model(self):
-        response={'results':[{'url':'https://example.org/unrelated','title':'Generic court homepage',
+        response={'results':[{'published_date':'2026-09-12','url':'https://example.org/unrelated','title':'Generic court homepage',
             'content':'General legal advice','raw_content':BODY*1000}]}
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.triage_api') as triage,patch('partner_monitor.web_media.analyze_api') as llm:
             job=run_web(self.root,'r')
@@ -116,15 +118,15 @@ class WebMediaTests(unittest.TestCase):
         self.assertEqual(web_status(db,job['job_id'])['quality'][0]['filtered'],1)
 
     def test_triage_reject_does_not_extract_or_create_findings(self):
-        response={'results':[{'url':'https://example.org/a','content':BODY}]}
-        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.triage_api',return_value=({'decision':'reject','reason':'Generic directory'},{})),patch('partner_monitor.media_selection.extract_api') as extract,patch('partner_monitor.web_media.analyze_api') as llm:
+        response={'results':[{'published_date':'2026-09-12','url':'https://example.org/a','content':BODY}]}
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('нет',{})),patch('partner_monitor.media_selection.extract_api') as extract,patch('partner_monitor.web_media.analyze_api') as llm:
             job=run_web(self.root,'r')
         self.assertEqual(job['findings'],0);extract.assert_not_called();llm.assert_not_called()
 
     def test_selected_article_extracts_only_short_name_context(self):
-        response={'results':[{'url':'https://example.org/a','title':'Example Ltd investigation','content':BODY}]}
+        response={'results':[{'published_date':'2026-09-12','url':'https://example.org/a','title':'Example Ltd investigation','content':BODY}]}
         raw='Unrelated background.\n'*200+'\n'+BODY+'\nA related continuation.\n'+'Other material.\n'*200
-        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.extract_api',return_value={'results':[{'url':'https://example.org/a','raw_content':raw}]}),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.extract_api',return_value={'results':[{'published_date':'2026-09-12','url':'https://example.org/a','raw_content':raw}]}),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
             job=run_web(self.root,'r')
         sent=llm.call_args.args[1]['content']
         self.assertIn(BODY,sent);self.assertLess(len(sent),5000);self.assertNotEqual(sent,raw)
@@ -132,12 +134,12 @@ class WebMediaTests(unittest.TestCase):
 
     def test_uncertain_triage_is_partial_without_extraction(self):
         response={'results':[{'url':'https://example.org/a','content':BODY}]}
-        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.triage_api',return_value=({'decision':'uncertain','reason':'Ambiguous name'},{})),patch('partner_monitor.media_selection.extract_api') as extract:
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('нет',{})),patch('partner_monitor.media_selection.extract_api') as extract:
             job=run_web(self.root,'r')
         self.assertEqual(job['status'],'PARTIAL');extract.assert_not_called()
 
     def test_resume_pins_model_and_does_not_repeat_successful_searches(self):
-        response={'results':[{'url':'https://example.org/story','content':BODY,'raw_content':BODY}]}
+        response={'results':[{'published_date':'2026-09-12','url':'https://example.org/story','content':BODY,'raw_content':BODY}]}
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response):
             job=run_web(self.root,'r',mode='search')
         with redirect_stdout(io.StringIO()),patch.dict(os.environ,{'OPENROUTER_MODEL':'changed/model'}),patch('partner_monitor.web_media.search_api',side_effect=AssertionError('No repeated search')),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
@@ -146,7 +148,7 @@ class WebMediaTests(unittest.TestCase):
 
     def test_pipeline_drains_pending_articles_and_exports(self):
         from partner_monitor.workflow import run_workflow
-        results=[{'url':'https://example.org/'+str(i),'content':BODY,'raw_content':BODY+' Article '+str(i)} for i in range(12)]
+        results=[{'published_date':'2026-09-12','url':'https://example.org/'+str(i),'content':BODY,'raw_content':BODY+' Article '+str(i)} for i in range(12)]
         responses=[{'results':results[i:i+5]} for i in range(0,12,5)]
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',side_effect=responses),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})) as llm:
             job=run_workflow(self.root,self.root/'report.html',run_id='r')
@@ -177,8 +179,23 @@ class WebMediaTests(unittest.TestCase):
             run_web(self.root,'r')
         api.assert_not_called()
 
+    def test_verifier_failure_resumes_without_repeating_explanation(self):
+        response={'results':[{'url':'https://example.org/a','published_date':'2026-09-12','content':BODY,'raw_content':BODY}]}
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.triage_api',return_value=('The excerpt names the company and describes an adverse investigation.',{})) as analyst,patch('partner_monitor.media_selection.verify_api',side_effect=RuntimeError('offline')):
+            job=run_web(self.root,'r')
+        self.assertEqual(analyst.call_count,1)
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.media_selection.triage_api',side_effect=AssertionError('Explanation must be reused')),patch('partner_monitor.web_media.search_api',side_effect=AssertionError('Search must be reused')),patch('partner_monitor.web_media.analyze_api',return_value=(result(),{})):
+            resumed=run_web(self.root,job_id=job['job_id'])
+        self.assertEqual(resumed['findings'],1)
+
+    def test_verifier_must_return_only_yes_or_no(self):
+        response={'results':[{'url':'https://example.org/a','published_date':'2026-09-12','content':BODY,'raw_content':BODY}]}
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('да, because it matches',{})),patch('partner_monitor.web_media.analyze_api') as evidence:
+            job=run_web(self.root,'r')
+        self.assertEqual(job['status'],'PARTIAL');evidence.assert_not_called()
+
     def test_invalid_model_evidence_is_saved_but_not_published(self):
-        response={'results':[{'url':'https://example.org/story','content':BODY,'raw_content':BODY}]}
+        response={'results':[{'published_date':'2026-09-12','url':'https://example.org/story','content':BODY,'raw_content':BODY}]}
         invalid=result();invalid['findings'][0]['evidence_quote']='Invented evidence unsupported by the article.'
         with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.web_media.analyze_api',return_value=(invalid,{'response':invalid})):
             job=run_web(self.root,'r')

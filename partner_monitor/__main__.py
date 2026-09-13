@@ -38,6 +38,7 @@ def main():
     scope.add_argument('--run',help='Reuse an existing official-data run')
     scope.add_argument('--job',help='Resume an existing media job and rebuild reports')
     scope.add_argument('--input',type=Path,help='Collect official data for a CSV/XLSX input first')
+    workflow_parser.add_argument('--baseline',help='Assessment ID to compare against')
     workflow_parser.add_argument('--replay',help='Replay official snapshots when using --input')
     workflow_parser.add_argument('--limit',type=int,default=3,help='0: all root companies; otherwise 1..100')
     workflow_parser.add_argument('--analysis-passes',type=int,choices=range(1,4),default=3)
@@ -86,7 +87,7 @@ def main():
         elif args.command=='pipeline':
             from .workflow import run_workflow
             result=run_workflow(data_dir,args.output,run_id=args.run,job_id=args.job,
-                input_path=args.input,replay=args.replay,limit=args.limit,analysis_passes=args.analysis_passes)
+                input_path=args.input,replay=args.replay,limit=args.limit,analysis_passes=args.analysis_passes,baseline=args.baseline)
         else:
             db = open_database(data_dir)
             try:

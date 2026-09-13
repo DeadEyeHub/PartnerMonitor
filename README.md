@@ -398,8 +398,7 @@ records follow the existing collection rules. Select **Company file** for batch 
 
 The launcher defaults to **Create report**: collection, paid search and analysis,
 then report generation. Choose a single registration number or a company file.
-All selected companies receive media checks, including file batches. **Advanced options** contains individual processing modes, the saved
-collection run and optional Excel export. Create report starts the selected workflow directly, including paid providers.
+All selected companies receive media checks, including file batches. Create report starts the full workflow directly, including paid providers and Excel export.
 
 Choose **Build a company list** to add registration numbers one at a time with
 **Add company** (or Enter). Remove entries before starting as needed. The list accepts
@@ -428,3 +427,16 @@ The manual company list starts collapsed; use **Show list / Hide list** to revie
 or remove entries. Saved names are looked up in the local database when entering
 a complete registration number and shown beside list entries. Name lookup does not
 call external data or model providers; Docker must be available.
+
+## Manual monitoring
+
+Choose **Monitoring**, select a saved report and press **Check for changes**. The
+launcher reuses exactly the root companies in that report, collects current official
+records and performs fresh media analysis. It compares against the selected assessment
+ID, even if other reports were created later. Only baselines using the current scoring
+rules are offered. Earlier official events are retained when their source check fails.
+
+**Open saved report** displays the archived assessment. New HTML and CSV exports are
+also preserved as `report-<assessment_id>.html/.csv`; older assessments without an HTML
+archive are rendered from their saved report data. Existing CLI processing modes remain
+available for diagnostics. Monitoring is manual; no automatic schedule is created.

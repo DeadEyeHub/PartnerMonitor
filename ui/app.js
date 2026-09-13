@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name=session-token]').content;
-let busy = false, runInitialized = false;
+let busy = false;
 const companyNumbers=[], companyNames=new Map(), pendingNames=new Map();
 async function api(path, body) {
   const response = await fetch(path,{method:body ? 'POST':'GET',headers:{'X-Session':token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
@@ -63,11 +63,11 @@ $('inputMode').addEventListener('change',inputChanged);
 function modeChanged() {
   const mode=$('mode').value;
   $('inputGroup').hidden=!['collect','full'].includes(mode);
-  $('runGroup').hidden=['collect','full'].includes(mode);
-  $('paidGroup').hidden=!['media','full'].includes(mode);
-  $('modeHelp').textContent=descriptions[mode];
-  $('modeHelp').hidden=mode==='full';
-  $('start').textContent=mode==='full'?'Create report':'Run selected step';
+  $('monitorGroup').hidden=mode!=='monitor';
+  $('paidGroup').hidden=!['monitor','full'].includes(mode);
+  $('modeHelp').textContent=descriptions[mode]||'';
+  $('modeHelp').hidden=true;
+  $('start').textContent=mode==='full'?'Create report':'Check for changes';
   inputChanged();
 }
 $('mode').addEventListener('change',modeChanged);modeChanged();
@@ -89,7 +89,7 @@ $('launchForm').addEventListener('submit',async event=>{
       if(!companyNumbers.length)throw new Error('Add at least one company to the list.');
     }
     $('start').disabled=true;
-    await api('/api/start',{mode:$('mode').value,input:$('input').value,input_mode:$('inputMode').value,registration_number:$('registrationNumber').value.trim(),registration_numbers:companyNumbers,run:$('run').value.trim(),excel:$('excel').checked});
+    await api('/api/start',{mode:$('mode').value,input:$('input').value,input_mode:$('inputMode').value,registration_number:$('registrationNumber').value.trim(),registration_numbers:companyNumbers,baseline:$('baseline').value,excel:true});
     await refresh();
   }catch(error){$('error').textContent=error.message;}
   finally{$('start').disabled=busy;}
@@ -105,7 +105,6 @@ async function refresh(){
     if(data.summary){
       $('companyCount').textContent=data.summary.companies;$('riskCount').textContent=data.summary.not_recommended;$('version').textContent=data.summary.methodology;
       $('assessmentDate').textContent='Generated '+new Date(data.summary.date).toLocaleString();
-      if(!runInitialized){$('run').value=data.summary.run_id;runInitialized=true;}
     }
     const labels={'latest.html':'Open full report','latest.csv':'Download compact CSV','latest.xlsx':'Download Excel workbook'};
     $('artifacts').replaceChildren(...data.artifacts.map(name=>{const a=document.createElement('a');a.href='/reports/'+name;a.target='_blank';a.rel='noopener';a.textContent=labels[name];return a;}));
@@ -116,3 +115,21 @@ async function refresh(){
   }catch(error){$('stage').textContent='Launcher connection unavailable: '+error.message;}
 }
 refresh();setInterval(refresh,2000);
+
+let savedReports=[];
+function showBaseline(){
+  const report=savedReports.find(r=>r.id===$('baseline').value);
+  $('baselineReport').hidden=!report;
+  if(report)$('baselineReport').href='/reports/report-'+report.id+'.html';
+  $('baselineInfo').textContent=report?report.names:'No saved reports with the current scoring rules.';
+}
+$('baseline').addEventListener('change',showBaseline);
+async function loadReports(){
+  try{
+    savedReports=await api('/api/reports');const previous=$('baseline').value;
+    $('baseline').replaceChildren(...savedReports.map(r=>new Option(new Date(r.date).toLocaleString()+' · '+r.companies+' companies · '+r.id.slice(0,8),r.id)));
+    if(savedReports.some(r=>r.id===previous))$('baseline').value=previous;
+    showBaseline();
+  }catch(error){$('baselineInfo').textContent='Report history unavailable: '+error.message;}
+}
+loadReports();setInterval(loadReports,15000);

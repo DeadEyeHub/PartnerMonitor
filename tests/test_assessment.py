@@ -159,6 +159,21 @@ class AssessmentTests(unittest.TestCase):
         data=item();data['financials']=copy.deepcopy(base);data['financials'][1]['equity']='0'
         self.assertEqual(assess(data)['score'],85)
 
+    def test_explicit_monitoring_baseline_ignores_latest_report(self):
+        data=item();companies=[{'registration_number':data['registration_number'],'name':'Example','role':'ROOT'}]
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory)
+            first,_=build_report(None,'r',companies,lambda *args:data,folder)
+            data['financials']=[{'year':'2025','equity':'-1','statement_id':'s','file_id':'f'}]
+            second,_=build_report(None,'r',companies,lambda *args:data,folder)
+            third,_=build_report(None,'r',companies,lambda *args:data,folder,baseline=first['id'])
+            self.assertEqual(third['previous_id'],first['id'])
+            self.assertNotEqual(third['id'],second['id'])
+            score_change=next(r for r in third['sheets']['Changes'] if r['Field']=='Reliability score')
+            self.assertEqual(score_change['Previous value'],100)
+            self.assertEqual(score_change['Current value'],85)
+            with self.assertRaises(ValueError):build_report(None,'r',companies,lambda *args:data,folder,baseline='../latest')
+
     def test_official_event_retained_on_failure_and_removed_on_success(self):
         data=item();data['quality']=[{'source':'vid_debt','status':'FOUND'}]
         data['tax_debt']=[{'query_status':'PUBLISHED_DEBT','published_debt_amount':'200','effective_date':'2026-09-09','evidence_url':'https://example.org'}]

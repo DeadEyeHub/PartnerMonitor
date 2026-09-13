@@ -8,7 +8,7 @@ from .web_media import run_web, web_status
 
 
 def run_workflow(data_dir, output, *, run_id=None, job_id=None, input_path=None,
-                 replay=None, limit=3, analysis_passes=3):
+                 replay=None, limit=3, analysis_passes=3, baseline=None):
     if sum(value is not None for value in (run_id,job_id,input_path)) != 1:
         raise ValueError('Choose exactly one of --run, --job or --input')
     if replay and not input_path:
@@ -44,7 +44,7 @@ def run_workflow(data_dir, output, *, run_id=None, job_id=None, input_path=None,
     try:
         official = db.execute('SELECT status FROM monitoring_runs WHERE run_id=?',(resolve_run(db,run_id),)).fetchone()[0]
         diagnostics = web_status(db,job_id)
-        artifacts = report(db,run_id,Path(output))
+        artifacts = report(db,run_id,Path(output),baseline=baseline)
         from .final_media_report import export_final_results
         artifacts['final_model_results']=export_final_results(db,job_id,Path(output).parent/('model-final-'+job_id+'.html'))
     finally:

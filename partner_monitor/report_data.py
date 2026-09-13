@@ -70,7 +70,7 @@ def persist(db, payload):
         if owns_connection: writable.close()
 
 
-def build_report(db, run_id, companies, load_company, directory):
+def build_report(db, run_id, companies, load_company, directory, baseline=None):
     directory = Path(directory)
     default = Path(__file__).resolve().parent.parent / 'config' / 'assessment_reviews.json'
     # User reviews are local, ignored data. Defaults contain only accepted public case links.
@@ -80,7 +80,13 @@ def build_report(db, run_id, companies, load_company, directory):
         reviews.setdefault(section, {}).update(local.get(section, {}))
     items = {c['registration_number']: load_company(db, run_id, c['registration_number']) for c in companies}
     assessments = {reg: assess(item, reviews) for reg, item in items.items()}
-    input_id = digest([RULES, run_id, items, reviews])
+    previous = None
+    if baseline:
+        import re
+        if not re.fullmatch(r'[a-f0-9]{24}', baseline): raise ValueError('Invalid baseline assessment')
+        previous = json.loads((directory/'assessments'/(baseline+'.json')).read_text(encoding='utf-8'))
+        if previous['version'] != VERSION: raise ValueError('Baseline uses different scoring rules; choose a report with the current methodology')
+    input_id = digest([RULES, run_id, items, reviews, baseline]) if baseline else digest([RULES, run_id, items, reviews])
     history = directory / 'assessments'
     target = history / (input_id + '.json')
     if target.exists():
@@ -88,7 +94,7 @@ def build_report(db, run_id, companies, load_company, directory):
         persist(db, payload)
         return payload, items
     latest = history / 'latest.json'
-    previous = json.loads(latest.read_text(encoding='utf-8')) if latest.exists() else None
+    if not baseline: previous = json.loads(latest.read_text(encoding='utf-8')) if latest.exists() else None
     if previous and previous['version'] != VERSION: previous = None
     now = datetime.now(timezone.utc).isoformat()
     source_map = {s['table']: s['id'] for s in load_sources() if s['format'] == 'csv'}

@@ -10,17 +10,15 @@
   <div class="columns">
   <section class="card"><h2>Create a report</h2><p class="muted">Enter a company or upload a list. We collect official records, analyze adverse media and prepare your report.</p>
   <form id="launchForm"><fieldset id="controls" disabled>
+    <label for="mode">Workspace</label><select id="mode"><option value="full">Create report</option><option value="monitor">Monitoring</option></select>
+    <div id="monitorGroup" hidden><label for="baseline">Previous report</label><select id="baseline"></select><p id="baselineInfo" class="muted"></p><a id="baselineReport" target="_blank" rel="noopener" hidden>Open saved report</a><p class="note">Refresh official records and news for the same companies. Changes are compared with the selected report. Previous evidence remains saved.</p></div>
     <div id="inputGroup" hidden>
       <label for="inputMode">Company input</label><select id="inputMode"><option value="single">Single company by registration number</option><option value="list">Build a company list</option><option value="file">Company file</option></select>
       <div id="singleGroup"><label for="registrationNumber">Registration number</label><input id="registrationNumber" type="text" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" placeholder="40003248848" autocomplete="off"><p id="singleName" class="muted" role="status"></p><p class="muted">Enter the 11-digit Latvian registration number. The company name is retrieved from official records. Web analysis covers this company only; related official records remain included.</p></div>
       <div id="listGroup" hidden><label for="listNumber">Add registration number</label><div class="fileRow"><input id="listNumber" type="text" inputmode="numeric" maxlength="11" placeholder="40003248848" autocomplete="off"><button id="addCompany" type="button">Add company</button></div><p id="listName" class="muted" role="status"></p><p id="listError" role="alert"></p><button id="toggleCompanies" type="button" aria-expanded="false" aria-controls="companyList">Show list</button><ul id="companyList" hidden></ul><p id="listCount" class="muted">No companies added.</p><p class="muted">Up to 100 companies. Full pipeline searches and analyzes every company in this list.</p></div>
       <div id="fileGroup" hidden><label for="input">Company file</label><div class="fileRow"><select id="input"></select><label class="upload" for="upload">Upload file</label><input id="upload" type="file" accept=".csv,.xlsx" hidden></div><p class="muted">CSV or XLSX · up to 5 MB · required column: registration_number</p><p id="uploadResult" role="status"></p></div></div>
     <div id="paidGroup" hidden><p class="muted">All selected companies receive web analysis. Request budgets apply per company. They do not guarantee a fixed bill. A new run performs fresh searches.</p></div>
-    <details id="advanced"><summary>Advanced options</summary>
-    <label for="mode">Processing mode</label><select id="mode"><option value="report">Rebuild reports from saved data</option><option value="collect">Collect official data + reports</option><option value="media">Search and analyze saved companies + reports</option><option value="full" selected>Full pipeline: collection, search, analysis + reports</option></select>
-    <div id="runGroup"><label for="run">Official collection run</label><input id="run" placeholder="Leave blank for latest collection" autocomplete="off"><p class="muted">Pre-filled from the latest report when available.</p></div>
-    <label class="check"><input id="excel" type="checkbox" checked>Also export the six-sheet Excel workbook</label>
-    <p class="muted">Docker Desktop must be running. Credentials stay in your local .env file.</p></details>
+
     <p id="modeHelp" class="note" hidden></p>
     <button class="primary" id="start" type="submit">Create report</button><p id="error" role="alert"></p>
   </fieldset></form></section>

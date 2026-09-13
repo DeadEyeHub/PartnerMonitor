@@ -2,6 +2,7 @@
 import argparse
 import base64
 import hashlib
+import html
 import json
 import mimetypes
 import os
@@ -150,6 +151,44 @@ class Launcher:
             raise ValueError('Duplicate registration numbers are not allowed')
         return numbers
 
+    def saved_report(self, assessment_id):
+        if not re.fullmatch(r'[a-f0-9]{24}',assessment_id): raise ValueError('Invalid report ID')
+        data=json.loads((self.root/'data/reports/assessments'/(assessment_id+'.json')).read_text(encoding='utf-8'))
+        esc=lambda value:html.escape(str(value if value is not None else ''))
+        blocks=['<!doctype html><meta charset="utf-8"><title>Saved assessment</title><style>body{font:15px system-ui;margin:30px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px;text-align:left;white-space:pre-wrap}section{overflow:auto}</style>',
+            '<h1>Saved assessment</h1><p>'+esc(data['created_at'])+' · '+esc(data['id'])+' · '+esc(data['version'])+'</p>']
+        for name,rows in data['sheets'].items():
+            blocks.append('<h2>'+esc(name)+'</h2>')
+            if not rows: blocks.append('<p>No entries recorded.</p>');continue
+            columns=list(rows[0]);blocks.append('<section><table><tr>'+''.join('<th>'+esc(c)+'</th>' for c in columns)+'</tr>')
+            blocks.extend('<tr>'+''.join('<td>'+esc(row.get(c))+'</td>' for c in columns)+'</tr>' for row in rows)
+            blocks.append('</table></section>')
+        return ''.join(blocks)
+
+    def monitoring_reports(self):
+        reports=[]
+        version=json.loads((self.root/'config/risk_rules.json').read_text())['version']
+        for path in (self.root/'data/reports/assessments').glob('*.json'):
+            if not re.fullmatch(r'[a-f0-9]{24}',path.stem): continue
+            try:
+                data=json.loads(path.read_text(encoding='utf-8'))
+                rows=data['sheets']['Overview']
+                if rows and data['version']==version:
+                    reports.append({'id':data['id'],'date':data['created_at'],'companies':len(rows),
+                        'names':', '.join(r['Company'] for r in rows[:3])})
+            except (ValueError,KeyError): continue
+        return sorted(reports,key=lambda r:r['date'],reverse=True)
+
+    def monitoring_request(self, request):
+        baseline=request.get('baseline','')
+        if not any(r['id']==baseline for r in self.monitoring_reports()):
+            raise ValueError('Select a saved report using the current scoring rules')
+        data=json.loads((self.root/'data/reports/assessments'/(baseline+'.json')).read_text(encoding='utf-8'))
+        numbers=[r['Registration number'] for r in data['sheets']['Overview']]
+        if not numbers or any(not re.fullmatch(r'[0-9]{11}',n) for n in numbers) or len(set(numbers))!=len(numbers):
+            raise ValueError('Invalid company list in saved report')
+        return baseline,numbers
+
     def company_name(self, request):
         number = request.get('registration_number', '')
         if not isinstance(number, str) or not re.fullmatch(r'[0-9]{11}', number):
@@ -190,10 +229,19 @@ class Launcher:
         return args
 
     def start(self, request):
-        args = self.command(request)
+        request=dict(request)
+        monitoring = request.get('mode') == 'monitor'
+        baseline,numbers = self.monitoring_request(request) if monitoring else (None,None)
+        if monitoring:
+            # The saved Overview is the root scope; related companies are collected afresh.
+            args=['docker','compose','run','--rm','-T','collector','pipeline','--limit','0',
+                  '--baseline',baseline,'--input','/input/pending.csv']
+            request['excel']=True
+        else:
+            args = self.command(request)
         with self.lock:
             if self.job and self.job['status'] == 'RUNNING': raise ValueError('A workflow is already running')
-            numbers = self.manual_registrations(request)
+            numbers = numbers if monitoring else self.manual_registrations(request)
             if numbers:
                 folder = self.root/'data/input'
                 folder.mkdir(parents=True, exist_ok=True)
@@ -280,11 +328,17 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/LICENSE.md': self.send(200,app.license,'text/plain; charset=utf-8')
             elif path in {'/app.js','/style.css'}:
                 self.send(200,(app.root/'ui'/path[1:]).read_bytes(),'text/javascript' if path.endswith('.js') else 'text/css')
+            elif path == '/api/reports':
+                app.authorize(self.headers.get('X-Session'))
+                self.send(200,app.monitoring_reports())
             elif path == '/api/status':
                 app.authorize(self.headers.get('X-Session'),accepted=False)
                 self.send(200,app.status())
             elif path.startswith('/reports/'):
                 target = within(app.root/'data/reports',unquote(path[len('/reports/'):]))
+                match = re.fullmatch(r'report-([a-f0-9]{24})\.html',target.name)
+                if not target.exists() and match:
+                    self.send(200,app.saved_report(match[1]),'text/html; charset=utf-8');return
                 if target.suffix.lower() not in {'.html','.pdf','.csv','.xlsx','.png'} or not target.is_file(): raise ValueError('Report not found')
                 self.send(200,target.read_bytes(),mimetypes.guess_type(target.name)[0] or 'application/octet-stream')
             else: self.send(404,{'error':'Not found'})

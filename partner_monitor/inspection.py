@@ -141,12 +141,12 @@ def compare(db,current,previous):
     return changes
 
 
-def report(db,run_id,path):
+def report(db,run_id,path,baseline=None):
     data = summary(db,run_id)
     from .overview import screening_rows,export_csv
     from .report_data import build_report
     from .web_logging import atomic_text
-    payload, items = build_report(db,run_id,data['companies'],company,path.parent)
+    payload, items = build_report(db,run_id,data['companies'],company,path.parent,baseline=baseline)
     model_reports=[]
     from .final_media_report import export_final_results
     latest_jobs=sorted({check['job_id'] for item in items.values() for check in item.get('web_checks',[]) if check.get('job_id')})
@@ -230,6 +230,18 @@ def report(db,run_id,path):
             if absent:
                 missing_rows.append({'Company':name,'Registration number':reg,'Missing data or unfinished check':'Financial fields ('+str(f.get('year'))+'): '+', '.join(absent),
                     'What happened':'The imported statement does not contain these values.', 'Next step':'Verify the original annual statement.'})
+    monitoring_rows = []
+    if baseline:
+        previous=json.loads((path.parent/'assessments'/(baseline+'.json')).read_text(encoding='utf-8'))
+        for row in overview:
+            reg=row['Registration number']; current=payload['companies'][reg]
+            old=previous['companies'].get(reg)
+            if not old: continue
+            before=old['assessment']['score']; after=current['assessment']['score']
+            changes=sum(r['Company']==current['name'] for r in payload['sheets']['Changes'])
+            monitoring_rows.append({'Company':current['name'],'Registration number':reg,
+                'Previous score':before,'Current score':after,'Score change':after-before,
+                'Recorded changes':changes,'Result':'Changes detected' if changes else 'No changes detected in comparable data'})
     blocks = ['<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Partner Monitor — Data</title>',
       '<style>body{font:15px system-ui;margin:32px;background:#f5f7fa;color:#172435}h1,h2{color:#133b55}table{border-collapse:collapse;background:white;width:100%}td,th{padding:9px;border:1px solid #dce3ea;text-align:left;vertical-align:top}th{background:#e8eff6}details{margin:12px 0;padding:12px;background:white;border:1px solid #dce3ea}summary{cursor:pointer;font-weight:600}.scroll{overflow:auto}.muted{color:#596574}a{color:#075c9a}</style>',
       '<h1>Partner Monitoring Report</h1>',
@@ -240,7 +252,9 @@ def report(db,run_id,path):
       '<h2>Overview</h2>',table(overview),
       '<p>Coverage is the percentage of seven available checks: UR identity, VID rating, VAT, financials, tax debt, sanctions screening and web analysis. A score of 100 with gaps means no penalty in available evidence, not proof of absence. Blank new-findings count means no earlier assessment baseline.</p>',
       '<h2>Scored events</h2>',table(payload['sheets']['Findings']),
-      '<h2>Changes since previous assessment</h2>',
+      '<h2>Monitoring summary</h2>'+table(monitoring_rows) if baseline else '',
+      '<h2 id=changes>Changes since previous assessment</h2>',
+      '<p>Compared with assessment '+esc(payload['previous_id'])+'</p>' if payload['previous_id'] else '',
       table(payload['sheets']['Changes']) if payload['previous_id'] else '<p>First assessment baseline. Future reports will compare scores, events and source fields against it.</p>',
       '<h2>Missing data and unfinished checks</h2>',
       '<p>These are gaps in available evidence, not findings against the company. An official check with no matching records is not treated as missing data.</p>',
@@ -285,5 +299,9 @@ def report(db,run_id,path):
     blocks.append('</html>')
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text('\n'.join(blocks),encoding='utf-8')
+    archive = path.parent/('report-'+payload['id']+'.html')
+    if not archive.exists():
+        archive.write_text(path.read_text(encoding='utf-8').replace(csv_path.name,'report-'+payload['id']+'.csv'),encoding='utf-8')
+        (path.parent/('report-'+payload['id']+'.csv')).write_bytes(csv_path.read_bytes())
     return {'report':str(path),'csv':str(csv_path),'workbook_data':str(payload_path),'model_reports':model_reports,'run_id':run_id,
             'assessment_id':payload['id'],'assessment_status':'PROVISIONAL' if any(c['assessment']['provisional'] for c in payload['companies'].values()) else 'CALCULATED'}

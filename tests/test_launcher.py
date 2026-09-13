@@ -75,6 +75,21 @@ class LauncherTests(unittest.TestCase):
         self.app.command({'mode':'full','input_mode':'single','registration_number':'40003248848'})
         self.assertEqual(before,self.app.files())
 
+    def test_monitoring_uses_selected_report_root_scope(self):
+        folder=self.root/'data/reports/assessments';folder.mkdir(parents=True)
+        (self.root/'config').mkdir();(self.root/'config/risk_rules.json').write_text('{"version":"v1"}')
+        baseline='a'*24
+        payload={'id':baseline,'version':'v1','created_at':'2026-09-13','sheets':{'Overview':[
+            {'Company':'Example','Registration number':'01234567890'}]}}
+        (folder/(baseline+'.json')).write_text(json.dumps(payload))
+        with patch('partner_monitor.launcher.threading.Thread') as worker:
+            self.app.start({'mode':'monitor','baseline':baseline})
+        args=worker.call_args.kwargs['args'][0]
+        self.assertEqual(args[args.index('--baseline')+1],baseline)
+        self.assertEqual((self.root/'data/input'/Path(args[-1]).name).read_text().splitlines(),['registration_number','01234567890'])
+        self.assertIn('Example',self.app.saved_report(baseline))
+        with self.assertRaises(ValueError):self.app.monitoring_request({'baseline':'../latest'})
+
     def test_saved_name_lookup_is_validated_and_read_only(self):
         with patch('partner_monitor.launcher.subprocess.run') as run:
             run.return_value.returncode=0

@@ -27,11 +27,11 @@ class SelectionTests(unittest.TestCase):
     def test_verifier_uses_fresh_messages_and_explicit_explanation_only(self):
         company={'name':'Example Ltd','historical_names':[]}
         article={'title':'News','url':'https://example.org','snippet':'Example Ltd reported event'}
-        response={'choices':[{'finish_reason':'stop','message':{'content':'да','reasoning_details':[{'type':'reasoning.encrypted','data':'DO_NOT_FORWARD'}]}}]}
+        response={'choices':[{'finish_reason':'stop','message':{'content':'yes','reasoning_details':[{'type':'reasoning.encrypted','data':'DO_NOT_FORWARD'}]}}]}
         with patch('partner_monitor.web_media.post_json',return_value=response) as post:
             selection.triage_api(company,article,'key','model')
             answer,_=selection.verify_api(company,article,'Explicit explanation only','key','model')
-        self.assertEqual(answer,'да')
+        self.assertEqual(answer,'yes')
         messages=post.call_args.args[2]['messages']
         self.assertEqual([m['role'] for m in messages],['system','user'])
         self.assertNotIn('DO_NOT_FORWARD',json.dumps(messages))

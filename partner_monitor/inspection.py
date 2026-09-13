@@ -99,10 +99,11 @@ def company(db,run_id,registration_number):
                     triage=json.loads(selected.pop('triage_json') or '{}')
                     selected['triage_decision']=triage.get('decision')
                     selected['triage_reason']=triage.get('reason')
-                    selected['verdict']=triage.get('verdict')
+                    selected['verdict']={'да':'yes','нет':'no'}.get(triage.get('verdict'),triage.get('verdict'))
                 if db.execute("SELECT 1 FROM sqlite_master WHERE name='web_article_judgment'").fetchone():
                     result['web_judgments']=[dict(r) for r in db.execute('SELECT a.url,j.explanation,j.verdict,j.date_check_json FROM web_article_judgment j JOIN web_articles a USING(job_id,registration_number,article_id) WHERE j.job_id=? AND j.registration_number=?',(job[0],registration_number))]
                     for judgment in result['web_judgments']:
+                        judgment['verdict']={'да':'yes','нет':'no'}.get(judgment['verdict'],judgment['verdict'])
                         dates=json.loads(judgment.pop('date_check_json'))
                         judgment['publication_date']=dates['publication_date']
                         judgment['date_review_required']=dates['review_required']

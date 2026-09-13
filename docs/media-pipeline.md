@@ -1,4 +1,4 @@
-# Media pipeline version 4
+# Media pipeline version 5
 
 ## Processing sequence
 
@@ -16,12 +16,12 @@
    title, URL, publication date, criteria and up to 1,200 snippet characters. It writes
    an explicit English explanation of relevance, conflicts and missing evidence.
    The second receives the same inputs plus only that explanation, and must return
-   exactly `да` or `нет`. No assistant history, hidden reasoning or encrypted reasoning
+   exactly `yes` or `no`. No assistant history, hidden reasoning or encrypted reasoning
    metadata is forwarded. The verifier must check the source and may disagree.
    Invalid verdicts are errors, never silently interpreted as yes. Both calls consume
    the existing persistent request budget. This separation is not an independent
    factual guarantee or a demonstrated hallucination reduction.
-4. Only a `да` verdict permits full-text retrieval through Tavily Extract. No
+4. Only a `yes` verdict permits full-text retrieval through Tavily Extract. No
    requests are made directly to arbitrary article hosts. A returned URL must match
    the requested canonical URL. Missing text is LIMITED_CONTENT, never no risk.
 5. Select original lines containing a company name and neighboring lines. Remove
@@ -60,8 +60,8 @@ Analyze mode now needs both keys because selected snippets can require Tavily Ex
 `--dry-run` makes no provider requests or database writes; it previews queries, data
 transfers, credential presence and limits. It does not validate provider access.
 
-Version-2/3 jobs and official-data history remain readable. A changed prompt/pipeline
-version cannot resume an old media job. Start a new job for version 4. The original
+Version-2/3/4 jobs and official-data history remain readable. A changed prompt/pipeline
+version cannot resume an old media job. Start a new job for version 5. The original
 requested model and limit values are pinned in job configuration.
 
 ## Budgets and retries
@@ -111,8 +111,8 @@ from URLs and are never substituted for event dates.
 The date check and both model outputs are persisted in `web_article_judgment` and shown
 under Web judgments in HTML. A successful explanation is committed before verification;
 if verification fails, resume retries verification without regenerating the explanation.
-Both request/response pairs remain in the standalone model HTML and journal. If a `нет`
-verdict has unresolved date metadata, the item remains TRIAGE_UNCERTAIN/PARTIAL. A `да`
+Both request/response pairs remain in the standalone model HTML and journal. If a `no`
+verdict has unresolved date metadata, the item remains TRIAGE_UNCERTAIN/PARTIAL. A `yes`
 verdict allows detailed analysis, but date uncertainties still preserve review status.
 The verifier never turns a date mismatch directly into a claim of a different company.
 

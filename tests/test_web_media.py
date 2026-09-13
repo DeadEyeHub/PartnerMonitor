@@ -39,7 +39,7 @@ class WebMediaTests(unittest.TestCase):
         env.start();self.addCleanup(env.stop)
         triage=patch('partner_monitor.media_selection.triage_api',return_value=('The company is named and the excerpt reports an investigation requiring review.',{}))
         triage.start();self.addCleanup(triage.stop)
-        verifier=patch('partner_monitor.media_selection.verify_api',return_value=('да',{}))
+        verifier=patch('partner_monitor.media_selection.verify_api',return_value=('yes',{}))
         verifier.start();self.addCleanup(verifier.stop)
         extract=patch('partner_monitor.media_selection.extract_api',return_value={'results':[],'failed_results':[]})
         extract.start();self.addCleanup(extract.stop)
@@ -119,7 +119,7 @@ class WebMediaTests(unittest.TestCase):
 
     def test_triage_reject_does_not_extract_or_create_findings(self):
         response={'results':[{'published_date':'2026-09-12','url':'https://example.org/a','content':BODY}]}
-        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('нет',{})),patch('partner_monitor.media_selection.extract_api') as extract,patch('partner_monitor.web_media.analyze_api') as llm:
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('no',{})),patch('partner_monitor.media_selection.extract_api') as extract,patch('partner_monitor.web_media.analyze_api') as llm:
             job=run_web(self.root,'r')
         self.assertEqual(job['findings'],0);extract.assert_not_called();llm.assert_not_called()
 
@@ -134,7 +134,7 @@ class WebMediaTests(unittest.TestCase):
 
     def test_uncertain_triage_is_partial_without_extraction(self):
         response={'results':[{'url':'https://example.org/a','content':BODY}]}
-        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('нет',{})),patch('partner_monitor.media_selection.extract_api') as extract:
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('no',{})),patch('partner_monitor.media_selection.extract_api') as extract:
             job=run_web(self.root,'r')
         self.assertEqual(job['status'],'PARTIAL');extract.assert_not_called()
 
@@ -193,7 +193,7 @@ class WebMediaTests(unittest.TestCase):
 
     def test_verifier_must_return_only_yes_or_no(self):
         response={'results':[{'url':'https://example.org/a','published_date':'2026-09-12','content':BODY,'raw_content':BODY}]}
-        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('да, because it matches',{})),patch('partner_monitor.web_media.analyze_api') as evidence:
+        with redirect_stdout(io.StringIO()),patch('partner_monitor.web_media.search_api',return_value=response),patch('partner_monitor.media_selection.verify_api',return_value=('yes, because it matches',{})),patch('partner_monitor.web_media.analyze_api') as evidence:
             job=run_web(self.root,'r')
         self.assertEqual(job['status'],'PARTIAL');evidence.assert_not_called()
 

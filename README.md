@@ -272,7 +272,7 @@ docker compose run --rm collector pipeline --job JOB_ID
 Search uses current/historical names and separate Latvian topics, never registration
 numbers. It requests snippets, not full raw pages. Code first checks for a company
 name in the title/snippet. An analyst receives at most 1,200 snippet characters and explains relevance. A second,
-fresh request receives the same news and explicit explanation and returns only да/нет.
+fresh request receives the same news and explicit explanation and returns only yes/no.
 Both receive source historical-name end dates and code-generated date review flags. Only selected publications proceed to Tavily Extract and evidence analysis.
 The evidence model receives at most 5,000 characters of company-centered paragraphs,
 not an entire raw page. Snippet triage never creates findings.
@@ -283,8 +283,8 @@ model-input characters. Reaching 40,000 provider-reported tokens stops subsequen
 model requests; an in-flight response may exceed that threshold. These are workload
 bounds, not a guaranteed currency spending cap. Optional lower `WEB_MAX_*` values are
 listed in `.env.example`. Limits and the model are pinned when the job starts and
-remain in force across resumes. Version-2/3 jobs remain readable but cannot be resumed
-with the version-4 selection logic; create a new job for the new method.
+remain in force across resumes. Version-2/3/4 jobs remain readable but cannot be resumed
+with the version-5 selection logic; create a new job for the new method.
 
 `web_quality` in the HTML company card shows retrieved results, retained URLs,
 name candidates, filters, triage, available evidence, analyses, duplicates, budget gaps

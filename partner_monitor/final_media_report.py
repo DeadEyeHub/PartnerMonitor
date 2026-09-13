@@ -26,9 +26,9 @@ def export_final_results(db,job_id,path):
           WHERE a.job_id=? AND a.registration_number=? AND a.analysis_status!='FILTERED'
           ORDER BY a.url''',(job_id,reg)).fetchall()
         if judgments:
-            blocks.append('<h3>Final relevance decisions by publication</h3><p>Да means sufficient relevance for further analysis, not proven involvement. Нет means insufficient grounds to proceed.</p><table><tr><th>Publication</th><th>Model verdict</th><th>Assessment outcome</th></tr>')
+            blocks.append('<h3>Final relevance decisions by publication</h3><p>Yes means sufficient relevance for further analysis, not proven involvement. No means insufficient grounds to proceed.</p><table><tr><th>Publication</th><th>Model verdict</th><th>Assessment outcome</th></tr>')
             for j in judgments:
-                blocks.append('<tr><td><a href="'+esc(j['url'])+'">'+esc(j['title'] or j['url'])+'</a></td><td>'+esc(j['verdict'] or 'No final answer')+'</td><td>'+esc(j['analysis_status'])+'</td></tr>')
+                blocks.append('<tr><td><a href="'+esc(j['url'])+'">'+esc(j['title'] or j['url'])+'</a></td><td>'+esc({'да':'yes','нет':'no'}.get(j['verdict'],j['verdict']) or 'No final answer')+'</td><td>'+esc(j['analysis_status'])+'</td></tr>')
             blocks.append('</table>')
         blocks.append('</section>')
     atomic_text(Path(path),page('Final Model Results',''.join(blocks)))

@@ -45,6 +45,8 @@ def run_workflow(data_dir, output, *, run_id=None, job_id=None, input_path=None,
         official = db.execute('SELECT status FROM monitoring_runs WHERE run_id=?',(resolve_run(db,run_id),)).fetchone()[0]
         diagnostics = web_status(db,job_id)
         artifacts = report(db,run_id,Path(output))
+        from .final_media_report import export_final_results
+        artifacts['final_model_results']=export_final_results(db,job_id,Path(output).parent/('model-final-'+job_id+'.html'))
     finally:
         db.close()
     return {'run_id':run_id,'job_id':job_id,

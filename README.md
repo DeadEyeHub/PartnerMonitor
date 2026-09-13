@@ -315,6 +315,12 @@ live comparison. No adverse-media result establishes absence of risk or legal cl
 
 ## Compact report export
 
+`pipeline` also writes `model-final-JOB_ID.html`: a standalone company summary with
+saved finding summaries, source links and final relevance verdicts, without prompts,
+analyst explanations or provider metadata. A relevance yes is not a finding of
+involvement; missing findings are not a clean bill of health. Only the selected web
+job is included, so earlier runs cannot silently populate the new result.
+
 The report command writes both `latest.html` and `latest.csv`. CSV includes only root
 companies and exactly the eight Overview fields from task section 26: Company,
 Registration number, Reliability score, Risk class, Coverage, Main reason,

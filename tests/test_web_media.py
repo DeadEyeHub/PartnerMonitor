@@ -167,6 +167,9 @@ class WebMediaTests(unittest.TestCase):
         self.assertEqual(job['status'],'PARTIAL')
         self.assertEqual(job['web']['errors'][0]['stage'],'search')
         self.assertTrue((self.root/'partial.html').exists())
+        final=Path(job['artifacts']['final_model_results']).read_text(encoding='utf-8')
+        self.assertIn('Involvement is not established',final)
+        self.assertNotIn('analyst_explanation',final)
 
     def test_pipeline_preflights_before_collection(self):
         from partner_monitor.workflow import run_workflow

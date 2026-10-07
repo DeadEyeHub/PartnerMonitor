@@ -80,8 +80,10 @@ independent CLI processes are not covered by that lock.
 
 ```csv
 registration_number,name
-40103485560,
+00000000001,
 ```
+
+The numbers shown in this README are synthetic format examples, not companies to query.
 
 `registration_number` is required: exactly 11 ASCII digits, stored as text to preserve
 leading zeros. Optional columns: `name`, `partner_type`, `comment`, `business_unit`.
@@ -160,7 +162,7 @@ docker compose run --rm collector collect --input /input/companies.csv
 docker compose run --rm collector pipeline --input /input/companies.csv --limit 0
 # Inspect saved data and regenerate reports without paid calls.
 docker compose run --rm collector status
-docker compose run --rm collector company 40103485560 --run RUN_ID
+docker compose run --rm collector company 00000000001 --run RUN_ID
 docker compose run --rm collector report --run RUN_ID
 # Preview the scope of a new web job without running it.
 docker compose run --rm collector web --run RUN_ID --limit 0 --dry-run
@@ -221,3 +223,6 @@ See [artifact retention](docs/artifact-retention.md),
 
 Secrets, database files, source snapshots and personal input/report data are excluded
 from Git. The UI is loopback-only and is not designed as a publicly hosted service.
+
+The distributed review configuration contains no company-specific exceptions.
+Use the ignored local review file for independently documented review decisions.

@@ -27,7 +27,7 @@ case numbers, IDs mentioned only in summaries and fuzzy text are not auto-linked
 Reviewed case IDs override automatic grouping. Cross-publication links use a reviewed
 `case_id`; all linked evidence is retained and the largest applicable penalty is charged
 once. This prevents a cartel fine and its appeal from adding separate penalties.
-The two accepted SKONTO cartel findings are linked in `config/assessment_reviews.json`.
+The shipped review configuration is empty. Company-specific decisions belong in the local, ignored review file.
 Other fuzzy event links remain suggestions: automatic semantic deduplication is not
 claimed. Review distinct quotations about a potentially identical case before treating
 their sum as final. Separate case IDs allow separate proven matters to be counted.
@@ -101,3 +101,8 @@ generate the final exports; other companies have explicit missing-web warnings.
 The two earlier test jobs have budget/uncertainty gaps, preserved in coverage and logs.
 All 25 scores are therefore provisional. Excel is a fixed assessment snapshot, not
 an editable replacement for the scoring engine; regenerate it after changing reviews.
+
+Version `risk-v1.4.0` removes preconfigured company-specific review links. Weights
+are unchanged. Saved assessments remain historical evidence; create a new baseline
+under the current methodology before monitoring. Local review files are independent
+user data and are not modified by this configuration update.

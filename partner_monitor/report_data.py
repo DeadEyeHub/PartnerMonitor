@@ -74,7 +74,7 @@ def persist(db, payload):
 def build_report(db, run_id, companies, load_company, directory, baseline=None):
     directory = Path(directory)
     default = Path(__file__).resolve().parent.parent / 'config' / 'assessment_reviews.json'
-    # User reviews are local, ignored data. Defaults contain only accepted public case links.
+    # User reviews are local, ignored data. Shipped defaults are empty; company-specific reviews belong in local data.
     reviews = load_reviews(default)
     local = load_reviews(directory / 'assessment-reviews.json')
     for section in ('findings', 'sanctions'):

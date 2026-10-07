@@ -39,12 +39,12 @@ class SelectionTests(unittest.TestCase):
         self.assertIn('name_date_check',messages[1]['content'])
 
     def test_name_queries_and_word_boundaries(self):
-        company={'name':'SIA "SKONTO BŪVE"','historical_names':['AS "Old Firm"'],'registration_number':'12345678901'}
+        company={'name':'SIA "EXAMPLE BŪVE"','historical_names':['AS "Old Firm"'],'registration_number':'12345678901'}
         queries=selection.queries_for(company)
         self.assertTrue(all('12345678901' not in q for q in queries))
         self.assertTrue(any('Old Firm' in q for q in queries))
-        self.assertTrue(selection.mentions('SKONTO BUVE: article',company))
-        self.assertFalse(selection.mentions('Skonto buvetajs',company))
+        self.assertTrue(selection.mentions('EXAMPLE BUVE: article',company))
+        self.assertFalse(selection.mentions('Example buvetajs',company))
 
     def test_triage_payload_never_contains_raw_page(self):
         with patch('partner_monitor.web_media.post_json',return_value={'choices':[{'finish_reason':'stop','message':{'content':json.dumps({'decision':'inspect','reason':'Review'})}}]}) as post:

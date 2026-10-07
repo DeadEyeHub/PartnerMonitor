@@ -20,6 +20,10 @@ def finding(kind='regulatory', text='A cartel fine was imposed.', quote='Exact s
 
 
 class AssessmentTests(unittest.TestCase):
+    def test_shipped_reviews_have_no_company_specific_overrides(self):
+        path=Path(__file__).resolve().parent.parent/'config/assessment_reviews.json'
+        self.assertEqual(load_reviews(path),{'findings':{},'sanctions':{}})
+
     def test_cartel_appeal_one_case_and_petition_only_five(self):
         a=finding();b=finding('legal_dispute','The court rejected the cartel appeal.','Separate exact quotation',None)
         c=finding('insolvency','An insolvency application was filed; the company disputed it.','Petition quotation','2018-06-15')

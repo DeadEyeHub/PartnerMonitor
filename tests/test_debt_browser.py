@@ -3,9 +3,9 @@ from datetime import date
 
 from partner_monitor.debt_browser import parse_result, query_date
 
-REG = '40003983337'
+REG = '00000000004'
 DAY = date(2026,9,9)
-PREFIX = '2026.gada septembra 9.datumā nodokļu maksātājam "Example 40003983337" '
+PREFIX = '2026.gada septembra 9.datumā nodokļu maksātājam "Example 00000000004" '
 NO_DEBT = PREFIX+'nav VID administrēto nodokļu (nodevu) parāda, kas kopsummā pārsniedz 150 euro.'
 
 

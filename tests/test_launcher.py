@@ -51,17 +51,17 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(before,self.app.files())
 
     def test_manual_list_creates_one_batch_and_analyzes_every_company(self):
-        request={'mode':'full','input_mode':'list','registration_numbers':['01234567890','40003248848'],'paid':True,'limit':1}
+        request={'mode':'full','input_mode':'list','registration_numbers':['01234567890','00000000002'],'paid':True,'limit':1}
         with patch('partner_monitor.launcher.threading.Thread') as worker:
             self.app.start(request)
         args=worker.call_args.kwargs['args'][0]
         self.assertEqual(args[args.index('--limit')+1],'0')
         path=self.root/'data/input'/Path(args[-1]).name
-        self.assertEqual(path.read_text().splitlines(),['registration_number','01234567890','40003248848'])
+        self.assertEqual(path.read_text().splitlines(),['registration_number','01234567890','00000000002'])
 
     def test_invalid_manual_lists_do_not_create_files(self):
         before=self.app.files()
-        for numbers in [None, [], '40003248848', ['40003248848',' 40003248848 '], ['wrong'], ['40003248848']*101]:
+        for numbers in [None, [], '00000000002', ['00000000002',' 00000000002 '], ['wrong'], ['00000000002']*101]:
             with self.subTest(numbers=numbers), self.assertRaises(ValueError):
                 self.app.start({'mode':'collect','input_mode':'list','registration_numbers':numbers})
         self.assertEqual(before,self.app.files())
@@ -72,7 +72,7 @@ class LauncherTests(unittest.TestCase):
             with self.subTest(number=number), self.assertRaises(ValueError):
                 self.app.start({'mode':'collect','input_mode':'single','registration_number':number})
         with self.assertRaises(ValueError):self.app.command({'mode':'collect','input_mode':'unknown'})
-        self.app.command({'mode':'full','input_mode':'single','registration_number':'40003248848'})
+        self.app.command({'mode':'full','input_mode':'single','registration_number':'00000000002'})
         self.assertEqual(before,self.app.files())
 
     def test_monitoring_uses_selected_report_root_scope(self):

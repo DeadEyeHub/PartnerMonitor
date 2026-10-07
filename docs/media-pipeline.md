@@ -147,49 +147,9 @@ recorded. HTML escapes all source/provider text. Full returned reasoning fields 
 be present, including encrypted provider metadata; internal model execution is not
 observable. Runtime evidence and reports are ignored by Git.
 
-Compact CSV retains the task's eight Overview fields. Risk scores and new-finding
-counts remain unimplemented and blank; risk class remains NOT_ASSESSED. The final
-risk engine, finding-change tracking and six-sheet workbook are separate stages.
+Compact CSV exports eight Overview fields. Scores and changes are calculated by
+the versioned assessment engine and shared with HTML and workbook exports.
 
-## Version-3 live validation
-
-Job `f8edfeb545e24a39964cad6ded254759` tested the same two companies after the user
-approved the new selection method. Nine name-only search queries returned 45 results,
-with 30 distinct retained URLs. Code filtered out 15; the model triaged 15 snippets.
-Five publications proceeded to extraction and detailed analysis, producing six
-NEEDS_REVIEW findings for SKONTO BŪVE. Seven snippets for Ogres būvmateriālu centrs
-were rejected by triage; no detailed analysis was performed for that company.
-
-There were no API errors. Two SKONTO articles were left at the evidence-article limit;
-all five detailed analyses used selected context, so the combined job remains PARTIAL.
-The findings describe reported historical events, not verified current legal status.
-
-Provider-reported usage was 13,033 tokens and 0.0058327 USD across model responses,
-versus 44,933 tokens and 0.0129161 USD in the earlier test. This is about 71% fewer
-tokens, but the retrieved material and processing paths differ; it is not a controlled
-same-input benchmark. Tavily charges are excluded from this cost comparison.
-
-Official API contract: [Tavily Extract](https://docs.tavily.com/documentation/api-reference/endpoint/extract).
-
-## Historical version-2 validation
-
-Job `d8e0bc501d0146129d8b8c436f2fc1da` checked SKONTO BŪVE (40003248848)
-and Ogres būvmateriālu centrs (40003299115) on 2026-09-12 after explicit user
-approval. Eight Tavily queries completed, yielding 33 retained URLs: 23 snippets
-and 10 raw-text articles (some truncated). Search results included substantial
-unrelated material; potentially relevant SKONTO articles remained snippet-only.
-
-The first model requests returned HTTP 404 because `temperature` was not supported
-by the configured `openai/gpt-5.6-luna` endpoints with strict parameter routing.
-Removing the optional parameter fixed routing without changing the model or schema.
-Resume reused all Tavily results. All ten analyses then passed schema validation:
-nine identities were different and one uncertain, with no findings. This tests
-identity rejection, not successful extraction of a relevant adverse event.
-
-Provider-reported usage for the ten successful model responses was 43,160 input
-and 1,773 output tokens (44,933 total), with cost 0.0129161 USD. This excludes Tavily
-charges and is not a reconciled provider bill. Final job status remains PARTIAL due
-to snippet-only/truncated coverage and uncertain identity; final article API errors
-are empty. Earlier failures remain visible in the HTML event history. Both HTML and
-compact CSV were regenerated. Search relevance and retrieval of full article text
-need improvement before expanding the scope.
+Provider usage is recorded per job. It is not a reconciled invoice and does not
+include costs that the provider does not return. Validate changes with synthetic
+fixtures; production evidence and run-specific results belong outside the repository.

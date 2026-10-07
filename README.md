@@ -148,7 +148,9 @@ all evidence and uses the largest applicable penalty within one grouped event.
 - News analysis works on bounded evidence excerpts. An explanation and separate yes/no
   relevance verdict do not prove misconduct. Ambiguity and incomplete work remain visible.
 - Exact quotes (whitespace normalized), reviewed case links and explicit Latvian civil-case
-  identifiers can group events. Fuzzy similarity alone does not automatically merge cases.
+  identifiers can group events. A final model pass also groups reports and appeals about
+  the same underlying case, retaining evidence and an explanation. Uncertain links stay
+  separate; model grouping remains subject to review.
 
 ## CLI
 

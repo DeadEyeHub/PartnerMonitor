@@ -85,6 +85,8 @@ def company(db,run_id,registration_number):
         if job:
             for table in ('web_checks','web_findings'):
                 result[table]=[dict(r) for r in db.execute(f'SELECT * FROM {table} WHERE job_id=? AND registration_number=?',(job[0],registration_number))]
+            from .event_grouping import enrich
+            enrich(db,job[0],registration_number,result['web_findings'])
             result['web_articles']=[dict(r) for r in db.execute('SELECT url,title,publication_date,content_kind,analysis_status,result_json,error_type FROM web_articles WHERE job_id=? AND registration_number=?',(job[0],registration_number))]
             result['web_queries']=[dict(r) for r in db.execute('SELECT query,status,error_type FROM web_queries WHERE job_id=? AND registration_number=? ORDER BY query',(job[0],registration_number))]
             for article in result['web_articles']:

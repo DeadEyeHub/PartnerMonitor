@@ -24,13 +24,17 @@ categories, not probabilities.
 Identical quoted evidence (ignoring whitespace) is scored once. A single explicit
 Latvian civil-case number in both evidence quotations also links publications; multiple
 case numbers, IDs mentioned only in summaries and fuzzy text are not auto-linked.
-Reviewed case IDs override automatic grouping. Cross-publication links use a reviewed
-`case_id`; all linked evidence is retained and the largest applicable penalty is charged
-once. This prevents a cartel fine and its appeal from adding separate penalties.
-The shipped review configuration is empty. Company-specific decisions belong in the local, ignored review file.
-Other fuzzy event links remain suggestions: automatic semantic deduplication is not
-claimed. Review distinct quotations about a potentially identical case before treating
-their sum as final. Separate case IDs allow separate proven matters to be counted.
+After article analysis, a separate model call groups evidence units for each company.
+It receives validated quotations, summaries, dates, statuses and source URLs, not raw pages.
+It must return every unit exactly once. Decisions and appeals concerning one underlying
+case are charged once, using the largest applicable penalty; all sources and quotations
+remain available. The report shows the model's grouping explanation. Similar topics alone
+are insufficient; uncertain links must remain separate. Model grouping can still be wrong.
+Reviewed case IDs take precedence. The shipped review configuration remains empty.
+Requests, responses and grouping reasons are saved. Unchanged evidence reuses the saved
+partition; changed evidence triggers a new call. Failure or budget exhaustion leaves the
+original deterministic grouping and marks web analysis PARTIAL; duplicate penalties may
+remain. Existing historical reports are not rewritten.
 
 The HTML retains official source tables, relationships, annual statements, metrics,
 tax evidence/PDFs, sanctions candidates and media processing evidence. Related companies
@@ -106,3 +110,6 @@ Version `risk-v1.4.0` removes preconfigured company-specific review links. Weigh
 are unchanged. Saved assessments remain historical evidence; create a new baseline
 under the current methodology before monitoring. Local review files are independent
 user data and are not modified by this configuration update.
+
+Version `risk-v1.5.0` adds model-assisted event grouping (media pipeline v6).
+A new methodology baseline is required. Penalty weights are unchanged.

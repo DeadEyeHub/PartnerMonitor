@@ -125,9 +125,13 @@ def assess(item, reviews=None):
             warnings.append('Verify current sanctions applicability for media finding ' + key)
             continue
         case = review.get('case_id')
-        group = digest([reg, *event_identity(f, case)])
+        group = digest([reg, 'model_event', f['model_event_id']]) if f.get('model_event_id') and not case else digest([reg, *event_identity(f, case)])
         add(group, rule, f['summary'], f.get('event_date'), f['source_url'], f['evidence_quote'],
             f['event_status'].replace('_', ' ').capitalize(), key)
+        if f.get('model_group_reason') and not case:
+            reasons=events[group].setdefault('grouping_reasons',[])
+            if f['model_group_reason'] not in reasons: reasons.append(f['model_group_reason'])
+            events[group]['status']='Model-grouped event: ' + '; '.join(reasons)
         if not f.get('event_date'):
             warnings.append('Exact event date unavailable: ' + key)
 

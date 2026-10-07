@@ -1,4 +1,4 @@
-# Media pipeline version 5
+# Media pipeline version 6
 
 ## Processing sequence
 
@@ -39,6 +39,15 @@
    Additionally, same-company/type/status findings with compatible dates and at least
    five overlapping summary terms (Jaccard >= 0.25) get candidate event links. These
    links require manual review, preserve all source findings, and do not merge events.
+
+8. After analysis, a fresh model request partitions validated findings into underlying
+   events for each company. Same-case court stages and appeals can share one penalty.
+   All evidence is retained; the largest applicable penalty is applied once per group.
+   Output must cover every evidence unit exactly once. Saved partitions are reused only
+   for unchanged evidence. This stage uses the existing company request/token budget;
+   failures leave deterministic grouping in place and mark analysis PARTIAL. Requests,
+   responses and explanations appear in provider logs; explanations also appear in the
+   final event status. Human review can override model grouping.
 
 ## Commands and scope
 
